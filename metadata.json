@@ -1,0 +1,6 @@
+{
+  "name": "Na Verdade",
+  "description": "Crie posts virais da trend Na Verdade com IA, leilão de anúncios em tempo real e feed estilo TikTok.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
