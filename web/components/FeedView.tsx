@@ -13,9 +13,13 @@ import {
   Gavel,
   Radio,
   Sparkles,
+  Send,
+  X,
+  Check,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
-interface FeedPost {
+export interface FeedPost {
   id: string;
   author: string;
   avatar: string;
@@ -28,6 +32,15 @@ interface FeedPost {
   comments: number;
   timeAgo: string;
   isLiked?: boolean;
+  isFavorited?: boolean;
+}
+
+export interface PostComment {
+  id: string;
+  postId: string;
+  authorName: string;
+  content: string;
+  timeAgo: string;
 }
 
 interface FeedViewProps {
@@ -60,6 +73,7 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
       comments: 89,
       timeAgo: '2h atrás',
       isLiked: false,
+      isFavorited: false,
     },
     {
       id: 'p2',
@@ -84,6 +98,7 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
       comments: 42,
       timeAgo: '4h atrás',
       isLiked: false,
+      isFavorited: false,
     },
     {
       id: 'p3',
@@ -108,8 +123,15 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
       comments: 134,
       timeAgo: '6h atrás',
       isLiked: true,
+      isFavorited: true,
     },
   ]);
+
+  // Comments modal state
+  const [selectedPostForComments, setSelectedPostForComments] = useState<FeedPost | null>(null);
+  const [commentsList, setCommentsList] = useState<PostComment[]>([]);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [shareToast, setShareToast] = useState(false);
 
   const stories = [
     { id: 's0', name: 'Você', avatar: '', isAdd: true },
@@ -139,19 +161,183 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
     },
   ];
 
-  const handleLike = (id: string) => {
+  // 1. LIKE WITH SUPABASE PERSISTENCE
+  const handleLike = async (id: string) => {
+    let isNowLiked = false;
+    let newLikes = 0;
+
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
+          isNowLiked = !p.isLiked;
+          newLikes = isNowLiked ? p.likes + 1 : Math.max(0, p.likes - 1);
           return {
             ...p,
-            isLiked: !p.isLiked,
-            likes: p.isLiked ? p.likes - 1 : p.likes + 1,
+            isLiked: isNowLiked,
+            likes: newLikes,
           };
         }
         return p;
       })
     );
+
+    try {
+      if (isNowLiked) {
+        await supabase.from('likes').insert({
+          post_id: id,
+          user_email: 'visitante@naverdade.app',
+          created_at: new Date().toISOString(),
+        });
+      } else {
+        await supabase
+          .from('likes')
+          .delete()
+          .match({ post_id: id, user_email: 'visitante@naverdade.app' });
+      }
+      await supabase.from('posts').update({ likes_count: newLikes }).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase like sync fallback:', err);
+    }
+  };
+
+  // 2. FAVORITE WITH SUPABASE PERSISTENCE
+  const handleFavorite = async (id: string) => {
+    let isNowFav = false;
+
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id === id) {
+          isNowFav = !p.isFavorited;
+          return {
+            ...p,
+            isFavorited: isNowFav,
+          };
+        }
+        return p;
+      })
+    );
+
+    try {
+      if (isNowFav) {
+        await supabase.from('favorites').insert({
+          post_id: id,
+          user_email: 'visitante@naverdade.app',
+          created_at: new Date().toISOString(),
+        });
+      } else {
+        await supabase
+          .from('favorites')
+          .delete()
+          .match({ post_id: id, user_email: 'visitante@naverdade.app' });
+      }
+    } catch (err) {
+      console.warn('Supabase favorite sync fallback:', err);
+    }
+  };
+
+  // 3. SHARE BUTTON
+  const handleShare = async (post: FeedPost) => {
+    const text = `Olha o post da trend "Na Verdade" por ${post.author}: ${post.description} #NaVerdade`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Na Verdade - Trend Viral',
+          text,
+          url: window.location.href,
+        });
+      } catch (e) {
+        // Ignored
+      }
+    } else {
+      navigator.clipboard.writeText(`${text} - ${window.location.href}`);
+      setShareToast(true);
+      setTimeout(() => setShareToast(false), 2500);
+    }
+  };
+
+  // 4. COMMENTS MODAL & SUPABASE PERSISTENCE
+  const openComments = async (post: FeedPost) => {
+    setSelectedPostForComments(post);
+    try {
+      const { data } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('post_id', post.id)
+        .order('created_at', { ascending: true });
+
+      if (data && data.length > 0) {
+        setCommentsList(
+          data.map((c: any) => ({
+            id: c.id,
+            postId: c.post_id,
+            authorName: c.author_name || 'Usuário',
+            content: c.content,
+            timeAgo: 'Recente',
+          }))
+        );
+      } else {
+        setCommentsList([
+          {
+            id: 'c1',
+            postId: post.id,
+            authorName: 'pedro.builds',
+            content: 'Essa trend ficou muito boa kkkkkk',
+            timeAgo: '10m atrás',
+          },
+          {
+            id: 'c2',
+            postId: post.id,
+            authorName: 'larissa.viaja',
+            content: 'Gerei o meu ontem, o resultado me chocou!',
+            timeAgo: '5m atrás',
+          },
+        ]);
+      }
+    } catch (e) {
+      setCommentsList([
+        {
+          id: 'c1',
+          postId: post.id,
+          authorName: 'pedro.builds',
+          content: 'Essa trend ficou incrível!',
+          timeAgo: '10m atrás',
+        },
+      ]);
+    }
+  };
+
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCommentText.trim() || !selectedPostForComments) return;
+
+    const newComment: PostComment = {
+      id: `c_${Date.now()}`,
+      postId: selectedPostForComments.id,
+      authorName: 'Você',
+      content: newCommentText.trim(),
+      timeAgo: 'Agora',
+    };
+
+    setCommentsList((prev) => [...prev, newComment]);
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === selectedPostForComments.id ? { ...p, comments: p.comments + 1 } : p
+      )
+    );
+
+    const textToSave = newCommentText.trim();
+    setNewCommentText('');
+
+    try {
+      await supabase.from('comments').insert({
+        post_id: selectedPostForComments.id,
+        author_name: 'Você',
+        content: textToSave,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Supabase comment sync fallback:', err);
+    }
   };
 
   return (
@@ -281,15 +467,28 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
                       }`}
                     />
                   </button>
-                  <button className="text-gray-700 hover:text-emerald-600 transition">
+                  <button
+                    onClick={() => openComments(post)}
+                    className="flex items-center gap-1 text-gray-700 hover:text-emerald-600 transition"
+                  >
                     <MessageCircle className="w-6 h-6" />
                   </button>
-                  <button className="text-gray-700 hover:text-emerald-600 transition">
+                  <button
+                    onClick={() => handleShare(post)}
+                    className="text-gray-700 hover:text-emerald-600 transition"
+                  >
                     <Share2 className="w-6 h-6" />
                   </button>
                 </div>
-                <button className="text-gray-700 hover:text-emerald-600 transition">
-                  <Bookmark className="w-6 h-6" />
+                <button
+                  onClick={() => handleFavorite(post.id)}
+                  className="text-gray-700 hover:text-emerald-600 transition"
+                >
+                  <Bookmark
+                    className={`w-6 h-6 ${
+                      post.isFavorited ? 'fill-[#00A86B] text-[#00A86B]' : 'text-gray-700'
+                    }`}
+                  />
                 </button>
               </div>
 
@@ -304,14 +503,19 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
                   {post.description}
                 </p>
                 <div className="flex items-center gap-2 pt-1 text-xs text-gray-400">
-                  <span>Ver todos os {post.comments} comentários</span>
+                  <button
+                    onClick={() => openComments(post)}
+                    className="hover:text-gray-600 transition"
+                  >
+                    Ver todos os {post.comments} comentários
+                  </button>
                   <span>•</span>
                   <span>{post.timeAgo}</span>
                 </div>
               </div>
             </article>
 
-            {/* Interspersed Auction Banner (as in screenshot image_3211551f.png) */}
+            {/* Interspersed Auction Banner */}
             {idx === 0 && (
               <div className="p-4 bg-gray-50">
                 <div className="rounded-2xl p-4 bg-gradient-to-r from-gray-950 via-purple-950 to-gray-900 text-white shadow-md border border-purple-800/40">
@@ -361,6 +565,63 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
           </React.Fragment>
         ))}
       </div>
+
+      {/* COMMENTS MODAL */}
+      {selectedPostForComments && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h3 className="font-bold text-sm text-gray-900">
+                Comentários ({commentsList.length})
+              </h3>
+              <button
+                onClick={() => setSelectedPostForComments(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto py-3 space-y-3">
+              {commentsList.map((comm) => (
+                <div key={comm.id} className="text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gray-900">{comm.authorName}</span>
+                    <span className="text-[10px] text-gray-400">{comm.timeAgo}</span>
+                  </div>
+                  <p className="text-gray-700 mt-0.5">{comm.content}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleAddComment} className="pt-2 border-t border-gray-100 flex gap-2">
+              <input
+                type="text"
+                placeholder="Adicione um comentário..."
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                className="flex-1 py-2 px-3 text-xs border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-600"
+              />
+              <button
+                type="submit"
+                className="w-9 h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center flex-shrink-0 transition"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Share Toast */}
+      {shareToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5 z-50 animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>Link copiado para a área de transferência!</span>
+        </div>
+      )}
     </div>
   );
 };

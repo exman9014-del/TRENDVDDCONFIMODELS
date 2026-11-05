@@ -14,8 +14,20 @@ data class TrendPost(
     val stepCaptions: List<String> = emptyList(),
     val likesCount: Int = 0,
     val isLiked: Boolean = false,
+    val isFavorited: Boolean = false,
     val commentsCount: Int = 0,
     val timeAgo: String = "Agora"
+)
+
+data class PostComment(
+    val id: String,
+    val postId: String,
+    val authorName: String,
+    val authorAvatarRes: Int? = null,
+    val authorAvatarUrl: String? = null,
+    val content: String,
+    val timeAgo: String = "Agora",
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 data class TrendCardItem(

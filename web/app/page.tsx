@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import TopHeader from '../components/TopHeader';
 import Navbar, { TabType } from '../components/Navbar';
 import LandingView from '../components/LandingView';
-import CreatePostView from '../components/CreatePostView';
+import CreatePostView, { Trait, TraitSuggestion } from '../components/CreatePostView';
 import ResultsView from '../components/ResultsView';
 import AuctionView from '../components/AuctionView';
 import { FeedView } from '../components/FeedView';
@@ -12,13 +12,6 @@ import { ProfileView } from '../components/ProfileView';
 import BidModal from '../components/BidModal';
 import AddTraitModal from '../components/AddTraitModal';
 import { supabase } from '../lib/supabase';
-
-interface Trait {
-  id: string;
-  name: string;
-  isBeauty: boolean;
-  enabled: boolean;
-}
 
 interface AuctionData {
   id: string;
@@ -81,8 +74,12 @@ export default function HomePage() {
   // Trait modal
   const [isAddTraitOpen, setIsAddTraitOpen] = useState(false);
 
-  // Initial traits list
-  const [traits, setTraits] = useState<Trait[]>([
+  // Containers count (default 4, user can click +1)
+  const [containersCount, setContainersCount] = useState<number>(4);
+  const [userPhoto, setUserPhoto] = useState<string | null>(null);
+
+  // Base traits template
+  const baseTraits: Trait[] = [
     // Beleza
     { id: 'b1', name: 'olhos verdes', isBeauty: true, enabled: true },
     { id: 'b2', name: 'cabelo loiro', isBeauty: true, enabled: true },
@@ -97,6 +94,67 @@ export default function HomePage() {
     { id: 'u4', name: 'sujo', isBeauty: false, enabled: false },
     { id: 'u5', name: 'roupa rasgada', isBeauty: false, enabled: false },
     { id: 'u6', name: 'postura desleixada', isBeauty: false, enabled: false },
+  ];
+
+  // Traits per image container map
+  const [imageTraitsMap, setImageTraitsMap] = useState<Record<number, Trait[]>>(() => {
+    const initialMap: Record<number, Trait[]> = {};
+    for (let i = 0; i < 4; i++) {
+      initialMap[i] = baseTraits.map((t) => ({ ...t }));
+    }
+    return initialMap;
+  });
+
+  // Trait suggestions from community
+  const [traitSuggestions, setTraitSuggestions] = useState<TraitSuggestion[]>([
+    {
+      id: 'sug_1',
+      name: 'olhos verdes',
+      isBeauty: true,
+      creatorName: 'Leonardo',
+      creatorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop',
+      usageCount: 1420,
+    },
+    {
+      id: 'sug_2',
+      name: 'tatuagem dragão',
+      isBeauty: true,
+      creatorName: 'Larissa',
+      creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&h=60&fit=crop',
+      usageCount: 980,
+    },
+    {
+      id: 'sug_3',
+      name: 'barba lenhador',
+      isBeauty: true,
+      creatorName: 'Pedro',
+      creatorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&h=60&fit=crop',
+      usageCount: 840,
+    },
+    {
+      id: 'sug_4',
+      name: 'cabelo platinado',
+      isBeauty: true,
+      creatorName: 'Mariana',
+      creatorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=60&h=60&fit=crop',
+      usageCount: 760,
+    },
+    {
+      id: 'sug_5',
+      name: 'olheiras pesadas',
+      isBeauty: false,
+      creatorName: 'Caio',
+      creatorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop',
+      usageCount: 610,
+    },
+    {
+      id: 'sug_6',
+      name: 'sorriso perfeito',
+      isBeauty: true,
+      creatorName: 'Beatriz',
+      creatorAvatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=60&h=60&fit=crop',
+      usageCount: 590,
+    },
   ]);
 
   // Results State
@@ -119,6 +177,38 @@ export default function HomePage() {
     ],
     tiktokTitle: 'POV: Você caiu na trend do "Na Verdade" 😂 #naverdade #trend #glowup',
   });
+
+  // Fetch remote suggestions from Supabase
+  useEffect(() => {
+    const fetchRemoteSuggestions = async () => {
+      try {
+        const { data } = await supabase
+          .from('custom_traits')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(30);
+
+        if (data && data.length > 0) {
+          const mapped: TraitSuggestion[] = data.map((item: any) => ({
+            id: item.id || `remote_${Math.random()}`,
+            name: item.name,
+            isBeauty: item.is_beauty,
+            creatorName: item.creator_name || 'Comunidade',
+            creatorAvatar: item.creator_avatar || undefined,
+            usageCount: item.usage_count || 1,
+          }));
+          setTraitSuggestions((prev) => {
+            const existingNames = new Set(prev.map((p) => p.name.toLowerCase()));
+            const newOnes = mapped.filter((m) => !existingNames.has(m.name.toLowerCase()));
+            return [...newOnes, ...prev];
+          });
+        }
+      } catch (e) {
+        // Fallback to local suggestions
+      }
+    };
+    fetchRemoteSuggestions();
+  }, []);
 
   // Tab navigation
   const handleSelectTab = (tab: TabType) => {
@@ -156,49 +246,151 @@ export default function HomePage() {
     }
   };
 
-  // Trait actions
-  const handleToggleTrait = (id: string) => {
-    setTraits((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, enabled: !t.enabled } : t))
-    );
+  // 1. ADD CONTAINER (+1)
+  const handleAddContainer = () => {
+    const nextCount = containersCount + 1;
+    const nextIndex = nextCount - 1;
+
+    setImageTraitsMap((prev) => ({
+      ...prev,
+      [nextIndex]: baseTraits.map((t) => ({ ...t })),
+    }));
+
+    setContainersCount(nextCount);
   };
 
-  const handleRemoveTrait = (id: string) => {
-    setTraits((prev) => prev.filter((t) => t.id !== id));
+  // 2. REMOVE CONTAINER
+  const handleRemoveContainer = (index: number) => {
+    if (containersCount <= 4) return;
+    const nextCount = containersCount - 1;
+    setImageTraitsMap((prev) => {
+      const updated: Record<number, Trait[]> = {};
+      let k = 0;
+      for (let i = 0; i < containersCount; i++) {
+        if (i !== index) {
+          updated[k] = prev[i] || baseTraits.map((t) => ({ ...t }));
+          k++;
+        }
+      }
+      return updated;
+    });
+    setContainersCount(nextCount);
   };
 
-  const handleAddCustomTrait = (name: String, isBeauty: boolean) => {
+  // 3. TOGGLE TRAIT FOR SPECIFIC IMAGE CONTAINER
+  const handleToggleTraitForImage = (imageIndex: number, traitId: string) => {
+    setImageTraitsMap((prev) => {
+      const list = prev[imageIndex] || baseTraits.map((t) => ({ ...t }));
+      const updated = list.map((t) => (t.id === traitId ? { ...t, enabled: !t.enabled } : t));
+      return {
+        ...prev,
+        [imageIndex]: updated,
+      };
+    });
+  };
+
+  // 4. REMOVE TRAIT FOR SPECIFIC IMAGE CONTAINER
+  const handleRemoveTraitForImage = (imageIndex: number, traitId: string) => {
+    setImageTraitsMap((prev) => {
+      const list = prev[imageIndex] || [];
+      return {
+        ...prev,
+        [imageIndex]: list.filter((t) => t.id !== traitId),
+      };
+    });
+  };
+
+  // 5. ADD TRAIT FROM COMMUNITY SUGGESTION
+  const handleAddTraitFromSuggestion = (suggestion: TraitSuggestion) => {
+    const targetIndex = 0; // Or current selected
+    const newTrait: Trait = {
+      id: `sug_${Date.now()}`,
+      name: suggestion.name,
+      isBeauty: suggestion.isBeauty,
+      enabled: true,
+      creatorName: suggestion.creatorName,
+    };
+
+    setImageTraitsMap((prev) => {
+      const list = (prev[targetIndex] || []).map((t) => ({ ...t }));
+      if (!list.some((t) => t.name.toLowerCase() === suggestion.name.toLowerCase())) {
+        list.push(newTrait);
+      } else {
+        list.forEach((t) => {
+          if (t.name.toLowerCase() === suggestion.name.toLowerCase()) t.enabled = true;
+        });
+      }
+      return {
+        ...prev,
+        [targetIndex]: list,
+      };
+    });
+  };
+
+  // 6. CREATE CUSTOM TRAIT (SAVES TO SUPABASE CUSTOM_TRAITS)
+  const handleAddCustomTrait = async (name: String, isBeauty: boolean) => {
+    const traitName = String(name).trim().toLowerCase();
     const newTrait: Trait = {
       id: `custom_${Date.now()}`,
-      name: String(name),
+      name: traitName,
       isBeauty,
       enabled: true,
+      creatorName: 'Você',
     };
-    setTraits((prev) => [...prev, newTrait]);
+
+    // Add to all containers or current container
+    setImageTraitsMap((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        const idx = Number(key);
+        updated[idx] = [...updated[idx], { ...newTrait }];
+      });
+      return updated;
+    });
+
+    // Add to community suggestions ticker
+    const newSug: TraitSuggestion = {
+      id: `sug_${Date.now()}`,
+      name: traitName,
+      isBeauty,
+      creatorName: 'Você',
+      creatorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50&h=50&fit=crop',
+      usageCount: 1,
+    };
+    setTraitSuggestions((prev) => [newSug, ...prev]);
+
+    // Persist to Supabase custom_traits table
+    try {
+      await supabase.from('custom_traits').insert({
+        name: traitName,
+        is_beauty: isBeauty,
+        creator_name: 'Você',
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Supabase custom trait persist fallback:', err);
+    }
   };
 
   // Generate with AI handler
   const handleGeneratePost = (data: {
     postType: 'UGLY_TO_BEAUTIFUL' | 'BEAUTIFUL_TO_UGLY';
     captions: string[];
-    selectedImage: string;
+    userPhotoUrl?: string;
   }) => {
-    // Generate results
+    const imagesToUse = [
+      data.userPhotoUrl || '/img_result_1.png',
+      '/img_result_2.png',
+      '/img_result_3.png',
+      '/img_result_4.png',
+    ];
+    while (imagesToUse.length < data.captions.length) {
+      imagesToUse.push('/img_result_1.png');
+    }
+
     setResultData({
-      images: [
-        '/img_result_1.png',
-        '/img_result_2.png',
-        '/img_result_3.png',
-        '/img_result_4.png',
-      ],
-      captions: data.captions.some((c) => c.trim().length > 0)
-        ? data.captions
-        : [
-            'nem é magra',
-            'na verdade eu não era loiro',
-            'desculpa kkkk',
-            'desculpa kkkk',
-          ],
+      images: imagesToUse.slice(0, data.captions.length),
+      captions: data.captions,
       tiktokTitle:
         data.postType === 'UGLY_TO_BEAUTIFUL'
           ? 'POV: O glow up da trend "Na Verdade" chocou todo mundo 😱 #naverdade #glowup'
@@ -207,6 +399,16 @@ export default function HomePage() {
     setShowResults(true);
     setPostsCreated((prev) => prev + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Also persist post to Supabase
+    supabase.from('posts').insert({
+      author_name: 'criador.naverdade',
+      author_handle: '@criador',
+      caption: data.captions.join(' | '),
+      step_captions: data.captions,
+      likes_count: 0,
+      created_at: new Date().toISOString(),
+    });
   };
 
   // Email subscribe
@@ -276,10 +478,17 @@ export default function HomePage() {
 
             {currentTab === 'create' && (
               <CreatePostView
-                traits={traits}
-                onToggleTrait={handleToggleTrait}
-                onRemoveTrait={handleRemoveTrait}
+                imageTraitsMap={imageTraitsMap}
+                onToggleTraitForImage={handleToggleTraitForImage}
+                onRemoveTraitForImage={handleRemoveTraitForImage}
                 onOpenAddTrait={() => setIsAddTraitOpen(true)}
+                onAddTraitFromSuggestion={handleAddTraitFromSuggestion}
+                traitSuggestions={traitSuggestions}
+                containersCount={containersCount}
+                onAddContainer={handleAddContainer}
+                onRemoveContainer={handleRemoveContainer}
+                userPhoto={userPhoto}
+                onUploadUserPhoto={(url) => setUserPhoto(url)}
                 onOpenBid={handleOpenBid}
                 onGenerate={handleGeneratePost}
               />

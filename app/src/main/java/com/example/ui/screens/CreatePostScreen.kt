@@ -9,6 +9,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,20 +22,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -52,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +76,9 @@ import com.example.R
 import com.example.model.AuctionItem
 import com.example.model.FeatureTrait
 import com.example.model.PostType
+import com.example.model.TraitSuggestion
 import com.example.ui.components.AddTraitDialog
+import com.example.ui.components.AllSuggestionsDialog
 import com.example.ui.components.BidDialog
 import com.example.ui.theme.CardBorder
 import com.example.ui.theme.CoralRed
@@ -81,6 +88,7 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.NaVerdadeUiState
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,11 +97,14 @@ fun CreatePostScreen(
     onBackClick: () -> Unit,
     onSetPostType: (PostType) -> Unit,
     onSelectThumbnail: (Int) -> Unit,
+    onAddImageContainer: () -> Unit,
+    onRemoveImageContainer: (Int) -> Unit,
     onUpdateCaption: (Int, String) -> Unit,
     onGenerateCaptions: () -> Unit,
-    onToggleTrait: (String) -> Unit,
-    onRemoveTrait: (String) -> Unit,
-    onAddTrait: (String, Boolean) -> Unit,
+    onToggleTraitForImage: (imageIndex: Int, traitId: String) -> Unit,
+    onRemoveTraitForImage: (imageIndex: Int, traitId: String) -> Unit,
+    onAddCustomTrait: (name: String, isBeauty: Boolean) -> Unit,
+    onAddTraitFromSuggestion: (TraitSuggestion) -> Unit,
     onUploadPhoto: (Uri) -> Unit,
     onGenerateWithAI: () -> Unit,
     onSubmitBid: (auctionId: String, email: String, amount: Double) -> Unit,
@@ -101,9 +112,10 @@ fun CreatePostScreen(
 ) {
     val scrollState = rememberScrollState()
     var showAddTraitDialog by remember { mutableStateOf(false) }
+    var showAllSuggestionsDialog by remember { mutableStateOf(false) }
     var showBidDialog by remember { mutableStateOf(false) }
 
-    // Android Photo Picker (zero-permission storage API)
+    // Photo picker
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -121,12 +133,16 @@ fun CreatePostScreen(
             remainingSeconds = 3600
         )
 
-    val previewThumbnails = listOf(
+    val defaultThumbnails = listOf(
         R.drawable.img_creator_main,
         R.drawable.img_result_1,
         R.drawable.img_result_2,
-        R.drawable.img_result_3
+        R.drawable.img_result_3,
+        R.drawable.img_result_4
     )
+
+    // Current traits for selected image container
+    val currentImageTraits = state.imageTraitsMap[state.selectedThumbnailIndex] ?: emptyList()
 
     Scaffold(
         topBar = {
@@ -151,11 +167,28 @@ fun CreatePostScreen(
                         )
                     }
                 },
+                actions = {
+                    // Container counter badge
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFDCFCE7))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "${state.imagesCount} Fotos",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryGreen
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },
         bottomBar = {
-            // Sticky Bottom CTA: "✨ Gerar com IA"
+            // Sticky CTA: "✨ Gerar com IA"
             Surface(
                 color = Color.White,
                 shadowElevation = 8.dp,
@@ -185,7 +218,7 @@ fun CreatePostScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             val progressText = when {
                                 state.generationProgress < 0.4f -> "Criando legendas com Gemini..."
-                                state.generationProgress < 0.8f -> "Gerando 4 imagens com IA..."
+                                state.generationProgress < 0.8f -> "Gerando ${state.imagesCount} imagens com IA..."
                                 else -> "Finalizando post no Supabase..."
                             }
                             Text(
@@ -203,8 +236,8 @@ fun CreatePostScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Gerar com IA",
-                                fontSize = 16.sp,
+                                text = "Gerar com IA (${state.imagesCount} Imagens)",
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
@@ -288,26 +321,144 @@ fun CreatePostScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // 2. MAIN PREVIEW PHOTO + UPLOAD TO SUPABASE STORAGE
+            // 2. SUGESTÕES DE TRAÇOS DE OUTROS USUÁRIOS (TICKER / MARQUEE)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFF0FDF4))
+                    .border(1.dp, MintBorder, RoundedCornerShape(14.dp))
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = PrimaryGreen,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Sugestões de outros usuários",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryGreen
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { showAllSuggestionsDialog = true }
+                            .padding(4.dp)
+                            .testTag("btn_see_all_suggestions")
+                    ) {
+                        Text(
+                            text = "Ver todas",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryGreen
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.List,
+                            contentDescription = "Ver todas",
+                            tint = PrimaryGreen,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Horizontal ticker of trait suggestions
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(state.traitSuggestions) { suggestion ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color.White)
+                                .border(1.dp, if (suggestion.isBeauty) Color(0xFFBBF7D0) else Color(0xFFFECACA), RoundedCornerShape(20.dp))
+                                .clickable { onAddTraitFromSuggestion(suggestion) }
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
+                                .testTag("sug_chip_${suggestion.id}")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                            ) {
+                                if (!suggestion.creatorAvatarUrl.isNullOrBlank()) {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(model = suggestion.creatorAvatarUrl),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Image(
+                                        painter = painterResource(id = suggestion.creatorAvatarRes ?: R.drawable.img_creator_main),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${suggestion.name} por ${suggestion.creatorName}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Adicionar",
+                                tint = if (suggestion.isBeauty) PrimaryGreen else CoralRed,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 3. MAIN PREVIEW PHOTO
+            val isUserPhotoSlot = state.selectedThumbnailIndex == state.userPhotoIndex
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFFF3F4F6))
-                    .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+                    .border(
+                        width = if (isUserPhotoSlot) 2.dp else 1.dp,
+                        color = if (isUserPhotoSlot) PrimaryGreen else CardBorder,
+                        shape = RoundedCornerShape(16.dp)
+                    )
             ) {
-                if (state.uploadedPhotoUrl != null && state.selectedThumbnailIndex == 0) {
+                if (isUserPhotoSlot && state.uploadedPhotoUrl != null) {
                     Image(
                         painter = rememberAsyncImagePainter(model = state.uploadedPhotoUrl),
-                        contentDescription = "Foto Carregada",
+                        contentDescription = "Sua Foto Carregada",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    val currentImageRes = previewThumbnails.getOrElse(state.selectedThumbnailIndex) {
+                    val currentImageRes = defaultThumbnails.getOrElse(state.selectedThumbnailIndex) {
                         R.drawable.img_creator_main
                     }
                     Image(
@@ -316,6 +467,34 @@ fun CreatePostScreen(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
+                }
+
+                // If this is the user photo slot, show prominent badge
+                if (isUserPhotoSlot) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(PrimaryGreen)
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "FOTO DO USUÁRIO (ÚLTIMO)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
 
                 // Upload button on top right of preview
@@ -335,20 +514,20 @@ fun CreatePostScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.AddPhotoAlternate,
-                        contentDescription = "Trocar Foto",
+                        contentDescription = "Enviar Foto",
                         tint = Color.White,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Sua Foto",
+                        text = if (state.uploadedPhotoUrl != null) "Trocar Foto" else "Sua Foto",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
 
-                // Storage upload indicator
+                // Upload progress indicator
                 if (state.isUploadingPhoto) {
                     Box(
                         modifier = Modifier
@@ -369,14 +548,8 @@ fun CreatePostScreen(
                     }
                 }
 
-                // Current caption badge over preview
-                val currentCaption = when (state.selectedThumbnailIndex) {
-                    0 -> state.captionLine1
-                    1 -> state.captionLine2
-                    2 -> state.captionLine3
-                    3 -> state.captionLine4
-                    else -> ""
-                }
+                // Current caption overlay badge over preview
+                val currentCaption = state.captionsList.getOrElse(state.selectedThumbnailIndex) { "" }
                 if (currentCaption.isNotBlank()) {
                     Box(
                         modifier = Modifier
@@ -396,117 +569,160 @@ fun CreatePostScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Upload Photo Action Button
-            OutlinedButton(
-                onClick = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGreen),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MintBorder),
+            // 4. CONTAINERS CAROUSEL (1, 2, 3, 4... + BOTÃO "+1")
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(42.dp)
-                    .testTag("btn_upload_photo_gallery")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CloudUpload,
-                    contentDescription = null,
-                    tint = PrimaryGreen,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (state.uploadedPhotoUrl != null) "Trocar Foto da Galeria (Supabase Storage)"
-                    else "Enviar Foto da Galeria (Supabase Storage)",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // 3. 4 THUMBNAILS CAROUSEL (1, 2, 3, 4)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                previewThumbnails.forEachIndexed { index, imgRes ->
-                    val isSelected = state.selectedThumbnailIndex == index
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clickable { onSelectThumbnail(index) }
-                            .testTag("thumb_step_${index + 1}")
-                    ) {
-                        Box(
+                LazyRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(state.imagesCount) { index ->
+                        val isSelected = state.selectedThumbnailIndex == index
+                        val isUserSlot = index == state.userPhotoIndex
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(if (isSelected) PrimaryGreen else Color(0xFFE5E7EB)),
-                            contentAlignment = Alignment.Center
+                                .clickable { onSelectThumbnail(index) }
+                                .testTag("thumb_step_${index + 1}")
                         ) {
-                            Text(
-                                text = "${index + 1}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) Color.White else TextSecondary
-                            )
+                            // Step circle badge
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isSelected) PrimaryGreen
+                                        else if (isUserSlot) Color(0xFFF59E0B)
+                                        else Color(0xFFE5E7EB)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected || isUserSlot) Color.White else TextSecondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Thumbnail Box
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        width = if (isSelected) 2.5.dp else if (isUserSlot) 2.dp else 1.dp,
+                                        color = if (isSelected) PrimaryGreen else if (isUserSlot) Color(0xFFF59E0B) else CardBorder,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                            ) {
+                                if (isUserSlot && state.uploadedPhotoUrl != null) {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(model = state.uploadedPhotoUrl),
+                                        contentDescription = "Sua foto",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    val imgRes = defaultThumbnails.getOrElse(index) { R.drawable.img_creator_main }
+                                    Image(
+                                        painter = painterResource(id = imgRes),
+                                        contentDescription = "Foto ${index + 1}",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+
+                                // Visual highlight tag if this is the user's photo slot
+                                if (isUserSlot) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFF59E0B).copy(alpha = 0.9f))
+                                            .padding(vertical = 1.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "SUA FOTO",
+                                            fontSize = 7.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Box(
+                    }
+
+                    // BOTÃO "+1" (Adicionar container extra de imagem)
+                    item {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .border(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) PrimaryGreen else CardBorder,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
+                                .clickable { onAddImageContainer() }
+                                .testTag("btn_add_image_container")
                         ) {
-                            if (index == 0 && state.uploadedPhotoUrl != null) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(model = state.uploadedPhotoUrl),
-                                    contentDescription = "Thumb ${index + 1}",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFDCFCE7)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = PrimaryGreen,
+                                    modifier = Modifier.size(14.dp)
                                 )
-                            } else {
-                                Image(
-                                    painter = painterResource(id = imgRes),
-                                    contentDescription = "Thumb ${index + 1}",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFF0FDF4))
+                                    .border(
+                                        width = 1.5.dp,
+                                        color = PrimaryGreen,
+                                        shape = RoundedCornerShape(10.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "+1",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = PrimaryGreen
+                                    )
+                                    Text(
+                                        text = "Foto",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryGreen
+                                    )
+                                }
                             }
                         }
                     }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFF3F4F6)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Avançar",
-                        tint = TextSecondary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            // 4. SELETOR DE TRAÇOS (+ Verde / + Vermelho)
+            // 5. SELETOR DE TRAÇOS POR IMAGEM (NÃO MAIS GLOBAL)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -522,17 +738,48 @@ fun CreatePostScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Seletor de traços",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(PrimaryGreen)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Foto ${state.selectedThumbnailIndex + 1} de ${state.imagesCount}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                             Text(
-                                text = "Seletor de traços",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = "Toque para adicionar ou remover",
+                                text = "Defina os traços individuais para esta foto",
                                 fontSize = 11.sp,
                                 color = TextSecondary
                             )
+                        }
+
+                        // Remove container option if > 4
+                        if (state.imagesCount > 4) {
+                            IconButton(
+                                onClick = { onRemoveImageContainer(state.selectedThumbnailIndex) },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Excluir container",
+                                    tint = CoralRed,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
 
@@ -573,39 +820,39 @@ fun CreatePostScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Beleza List
+                    // Beleza List for this specific image
                     Text(
-                        text = "Beleza",
+                        text = "Beleza (Foto ${state.selectedThumbnailIndex + 1})",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = PrimaryGreen
                     )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    state.traits.filter { it.isBeauty }.forEach { trait ->
+                    currentImageTraits.filter { it.isBeauty }.forEach { trait ->
                         TraitRowItem(
                             trait = trait,
-                            onToggle = { onToggleTrait(trait.id) },
-                            onRemove = { onRemoveTrait(trait.id) }
+                            onToggle = { onToggleTraitForImage(state.selectedThumbnailIndex, trait.id) },
+                            onRemove = { onRemoveTraitForImage(state.selectedThumbnailIndex, trait.id) }
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Feiura List
+                    // Feiura List for this specific image
                     Text(
-                        text = "Feiura",
+                        text = "Feiura (Foto ${state.selectedThumbnailIndex + 1})",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = CoralRed
                     )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    state.traits.filter { !it.isBeauty }.forEach { trait ->
+                    currentImageTraits.filter { !it.isBeauty }.forEach { trait ->
                         TraitRowItem(
                             trait = trait,
-                            onToggle = { onToggleTrait(trait.id) },
-                            onRemove = { onRemoveTrait(trait.id) }
+                            onToggle = { onToggleTraitForImage(state.selectedThumbnailIndex, trait.id) },
+                            onRemove = { onRemoveTraitForImage(state.selectedThumbnailIndex, trait.id) }
                         )
                     }
 
@@ -623,7 +870,7 @@ fun CreatePostScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "+ Criar traço personalizado",
+                            text = "+ Criar traço personalizado (Compartilhar)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextPrimary
@@ -634,7 +881,7 @@ fun CreatePostScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 5. LEGENDA DO POST COM BOTÃO IA GEMINI
+            // 6. LEGENDAS DO POST (REDLINE DINÂMICO PARA CADA CONTAINER)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -657,7 +904,7 @@ fun CreatePostScreen(
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Gere com IA Gemini ou digite",
+                                text = "Gere com IA Gemini ou digite para as ${state.imagesCount} fotos",
                                 fontSize = 11.sp,
                                 color = TextSecondary
                             )
@@ -698,39 +945,22 @@ fun CreatePostScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    CaptionInputField(
-                        label = "Linha 1",
-                        value = state.captionLine1,
-                        onValueChange = { onUpdateCaption(1, it) },
-                        testTag = "input_caption_1"
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CaptionInputField(
-                        label = "Linha 2",
-                        value = state.captionLine2,
-                        onValueChange = { onUpdateCaption(2, it) },
-                        testTag = "input_caption_2"
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CaptionInputField(
-                        label = "Linha 3",
-                        value = state.captionLine3,
-                        onValueChange = { onUpdateCaption(3, it) },
-                        testTag = "input_caption_3"
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CaptionInputField(
-                        label = "Linha 4",
-                        value = state.captionLine4,
-                        onValueChange = { onUpdateCaption(4, it) },
-                        testTag = "input_caption_4"
-                    )
+                    // Dynamically render inputs for all containers
+                    state.captionsList.forEachIndexed { index, captionText ->
+                        CaptionInputField(
+                            label = "Linha ${index + 1}",
+                            value = captionText,
+                            onValueChange = { onUpdateCaption(index, it) },
+                            testTag = "input_caption_${index + 1}"
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 6. BANNER PEQUENO DE LEILÃO
+            // 7. BANNER PEQUENO DE LEILÃO
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -778,7 +1008,20 @@ fun CreatePostScreen(
     if (showAddTraitDialog) {
         AddTraitDialog(
             onDismiss = { showAddTraitDialog = false },
-            onAddTrait = onAddTrait
+            onAddTrait = { name, isBeauty ->
+                onAddCustomTrait(name, isBeauty)
+                showAddTraitDialog = false
+            }
+        )
+    }
+
+    if (showAllSuggestionsDialog) {
+        AllSuggestionsDialog(
+            suggestions = state.traitSuggestions,
+            onSelectSuggestion = { suggestion ->
+                onAddTraitFromSuggestion(suggestion)
+            },
+            onDismiss = { showAllSuggestionsDialog = false }
         )
     }
 
@@ -805,7 +1048,10 @@ fun TraitRowItem(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
             Icon(
                 imageVector = if (trait.isEnabled) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                 contentDescription = null,
@@ -815,11 +1061,21 @@ fun TraitRowItem(
                     .clickable { onToggle() }
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = trait.name,
-                fontSize = 12.sp,
-                color = if (trait.isEnabled) TextPrimary else TextMuted
-            )
+            Column {
+                Text(
+                    text = trait.name,
+                    fontSize = 12.sp,
+                    fontWeight = if (trait.isEnabled) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (trait.isEnabled) TextPrimary else TextMuted
+                )
+                if (trait.creatorName != null) {
+                    Text(
+                        text = "por ${trait.creatorName}",
+                        fontSize = 9.sp,
+                        color = TextMuted
+                    )
+                }
+            }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -854,7 +1110,7 @@ fun CaptionInputField(
             text = label,
             fontSize = 11.sp,
             color = TextSecondary,
-            modifier = Modifier.width(50.dp)
+            modifier = Modifier.width(55.dp)
         )
         OutlinedTextField(
             value = value,

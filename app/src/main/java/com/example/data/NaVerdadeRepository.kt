@@ -4,6 +4,7 @@ import com.example.R
 import com.example.model.AuctionItem
 import com.example.model.FeatureTrait
 import com.example.model.PostType
+import com.example.model.TraitSuggestion
 import com.example.model.TrendCardItem
 import com.example.model.TrendPost
 
@@ -100,17 +101,86 @@ class NaVerdadeRepository {
             FeatureTrait(id = "b_olhos", name = "olhos verdes", isBeauty = true, isEnabled = true),
             FeatureTrait(id = "b_cabelo", name = "cabelo loiro", isBeauty = true, isEnabled = true),
             FeatureTrait(id = "b_barba", name = "barba", isBeauty = true, isEnabled = true),
-            FeatureTrait(id = "b_tat_braco", name = "tatuagem braço", isBeauty = true, isEnabled = true),
-            FeatureTrait(id = "b_tat_pescoco", name = "tatuagem pescoço", isBeauty = true, isEnabled = true),
-            FeatureTrait(id = "b_musculoso", name = "musculoso", isBeauty = true, isEnabled = true),
+            FeatureTrait(id = "b_tat_braco", name = "tatuagem braço", isBeauty = true, isEnabled = false),
+            FeatureTrait(id = "b_tat_pescoco", name = "tatuagem pescoço", isBeauty = true, isEnabled = false),
+            FeatureTrait(id = "b_musculoso", name = "musculoso", isBeauty = true, isEnabled = false),
 
             // Feiura
             FeatureTrait(id = "f_barba_ruim", name = "barba mal feita", isBeauty = false, isEnabled = true),
-            FeatureTrait(id = "f_sem_barba", name = "sem barba", isBeauty = false, isEnabled = true),
-            FeatureTrait(id = "f_palido", name = "pálido", isBeauty = false, isEnabled = true),
-            FeatureTrait(id = "f_sujo", name = "sujo", isBeauty = false, isEnabled = true),
-            FeatureTrait(id = "f_roupa_rasgada", name = "roupa rasgada", isBeauty = false, isEnabled = true),
-            FeatureTrait(id = "f_postura", name = "postura desleixada", isBeauty = false, isEnabled = true)
+            FeatureTrait(id = "f_sem_barba", name = "sem barba", isBeauty = false, isEnabled = false),
+            FeatureTrait(id = "f_palido", name = "pálido", isBeauty = false, isEnabled = false),
+            FeatureTrait(id = "f_sujo", name = "sujo", isBeauty = false, isEnabled = false),
+            FeatureTrait(id = "f_roupa_rasgada", name = "roupa rasgada", isBeauty = false, isEnabled = false),
+            FeatureTrait(id = "f_postura", name = "postura desleixada", isBeauty = false, isEnabled = false)
+        )
+    }
+
+    fun getInitialTraitSuggestions(): List<TraitSuggestion> {
+        return listOf(
+            TraitSuggestion(
+                id = "sug_1",
+                name = "olhos verdes",
+                isBeauty = true,
+                creatorName = "Leonardo",
+                creatorAvatarRes = R.drawable.img_creator_main,
+                usageCount = 1420
+            ),
+            TraitSuggestion(
+                id = "sug_2",
+                name = "tatuagem dragão",
+                isBeauty = true,
+                creatorName = "Larissa",
+                creatorAvatarRes = R.drawable.img_hero_woman,
+                usageCount = 980
+            ),
+            TraitSuggestion(
+                id = "sug_3",
+                name = "barba lenhador",
+                isBeauty = true,
+                creatorName = "Pedro",
+                creatorAvatarRes = R.drawable.img_result_4,
+                usageCount = 840
+            ),
+            TraitSuggestion(
+                id = "sug_4",
+                name = "cabelo platinado",
+                isBeauty = true,
+                creatorName = "Mariana",
+                creatorAvatarRes = R.drawable.img_result_1,
+                usageCount = 760
+            ),
+            TraitSuggestion(
+                id = "sug_5",
+                name = "olheiras pesadas",
+                isBeauty = false,
+                creatorName = "Caio",
+                creatorAvatarRes = R.drawable.img_result_2,
+                usageCount = 610
+            ),
+            TraitSuggestion(
+                id = "sug_6",
+                name = "sorriso perfeito",
+                isBeauty = true,
+                creatorName = "Beatriz",
+                creatorAvatarRes = R.drawable.img_result_3,
+                usageCount = 590
+            ),
+            TraitSuggestion(
+                id = "sug_7",
+                name = "cabelo bagunçado",
+                isBeauty = false,
+                creatorName = "Lucas",
+                creatorAvatarRes = R.drawable.img_creator_main,
+                usageCount = 450
+            ),
+            TraitSuggestion(
+                id = "sug_8",
+                name = "piercing sobrancelha",
+                isBeauty = true,
+                creatorName = "Fernanda",
+                creatorAvatarRes = R.drawable.img_hero_woman,
+                usageCount = 410
+            )
         )
     }
 
@@ -128,6 +198,7 @@ class NaVerdadeRepository {
                 stepCaptions = listOf("Chegada", "Praia Secreta", "Centro Histórico", "Açaí Perfeito"),
                 likesCount = 1248,
                 isLiked = false,
+                isFavorited = false,
                 commentsCount = 89,
                 timeAgo = "2h atrás"
             ),
@@ -153,6 +224,7 @@ class NaVerdadeRepository {
                 ),
                 likesCount = 4892,
                 isLiked = true,
+                isFavorited = true,
                 commentsCount = 312,
                 timeAgo = "35m atrás"
             ),
@@ -168,6 +240,7 @@ class NaVerdadeRepository {
                 stepCaptions = listOf("Mirante", "Cachoeira", "Trilha", "Pôr do Sol"),
                 likesCount = 873,
                 isLiked = false,
+                isFavorited = false,
                 commentsCount = 44,
                 timeAgo = "4h atrás"
             )

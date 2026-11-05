@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
@@ -53,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,11 +66,11 @@ import com.example.R
 import com.example.model.AuctionItem
 import com.example.model.TrendPost
 import com.example.ui.components.BidDialog
+import com.example.ui.components.CommentsBottomSheet
 import com.example.ui.components.LivePulsingDot
 import com.example.ui.theme.CardBorder
 import com.example.ui.theme.LiveIndicatorRed
 import com.example.ui.theme.PrimaryGreen
-import com.example.ui.theme.PrimaryGreenDark
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -83,9 +87,14 @@ data class StoryItem(
 fun FeedScreen(
     state: NaVerdadeUiState,
     onToggleLike: (String) -> Unit,
+    onToggleFavorite: (String) -> Unit,
+    onOpenComments: (TrendPost) -> Unit,
+    onCloseComments: () -> Unit,
+    onAddComment: (postId: String, text: String) -> Unit,
     onSubmitBid: (auctionId: String, email: String, amount: Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var selectedAuctionForBid by remember { mutableStateOf<AuctionItem?>(null) }
     val feedAuction = state.auctions.find { it.id == "banner_feed" }
         ?: AuctionItem(
@@ -269,7 +278,17 @@ fun FeedScreen(
         itemsIndexed(state.feedPosts) { index, post ->
             FeedPostItem(
                 post = post,
-                onLikeClick = { onToggleLike(post.id) }
+                onLikeClick = { onToggleLike(post.id) },
+                onFavoriteClick = { onToggleFavorite(post.id) },
+                onCommentClick = { onOpenComments(post) },
+                onShareClick = {
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, "Olha esse post da trend Na Verdade por ${post.authorName}: ${post.caption} #NaVerdade")
+                        type = "text/plain"
+                    }
+                    context.startActivity(Intent.createChooser(sendIntent, "Compartilhar Post Na Verdade"))
+                }
             )
 
             // Insert Live Auction Banner between post 0 and post 1 (matching reference design!)
@@ -402,12 +421,26 @@ fun FeedScreen(
             onSubmitBid = onSubmitBid
         )
     }
+
+    // Comments Sheet
+    state.selectedPostForComments?.let { post ->
+        CommentsBottomSheet(
+            post = post,
+            comments = state.commentsForSelectedPost,
+            isLoading = state.isLoadingComments,
+            onAddComment = { text -> onAddComment(post.id, text) },
+            onDismiss = onCloseComments
+        )
+    }
 }
 
 @Composable
 fun FeedPostItem(
     post: TrendPost,
     onLikeClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
+    onCommentClick: () -> Unit,
+    onShareClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -558,8 +591,9 @@ fun FeedPostItem(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Like button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -578,26 +612,51 @@ fun FeedPostItem(
                     )
                 }
 
-                Icon(
-                    imageVector = Icons.Default.ChatBubbleOutline,
-                    contentDescription = "Comentar",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(22.dp)
-                )
+                // Comment button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { onCommentClick() }
+                        .testTag("comment_post_${post.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChatBubbleOutline,
+                        contentDescription = "Comentar",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
 
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Compartilhar",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(22.dp)
-                )
+                // Share button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { onShareClick() }
+                        .testTag("share_post_${post.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Compartilhar",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
 
-            Text(
-                text = post.timeAgo,
-                fontSize = 11.sp,
-                color = TextMuted
-            )
+            // Favorite (bookmark) button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clickable { onFavoriteClick() }
+                    .testTag("favorite_post_${post.id}")
+            ) {
+                Icon(
+                    imageVector = if (post.isFavorited) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = "Favoritar",
+                    tint = if (post.isFavorited) PrimaryGreen else TextSecondary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -623,6 +682,15 @@ fun FeedPostItem(
                     text = post.caption,
                     fontSize = 13.sp,
                     color = TextPrimary
+                )
+            }
+            if (post.commentsCount > 0) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Ver todos os ${post.commentsCount} comentários",
+                    fontSize = 11.sp,
+                    color = TextMuted,
+                    modifier = Modifier.clickable { onCommentClick() }
                 )
             }
         }

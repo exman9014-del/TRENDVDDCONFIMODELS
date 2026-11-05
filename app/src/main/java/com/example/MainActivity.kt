@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -122,13 +121,24 @@ fun NaVerdadeApp(
                         onBackClick = { viewModel.navigateTo(ScreenDestination.LANDING) },
                         onSetPostType = { type -> viewModel.setPostType(type) },
                         onSelectThumbnail = { index -> viewModel.selectThumbnail(index) },
+                        onAddImageContainer = { viewModel.addImageContainer() },
+                        onRemoveImageContainer = { index -> viewModel.removeImageContainer(index) },
                         onUpdateCaption = { lineIndex, text ->
                             viewModel.updateCaptionLine(lineIndex, text)
                         },
                         onGenerateCaptions = { viewModel.generateCaptionsWithAI() },
-                        onToggleTrait = { id -> viewModel.toggleTrait(id) },
-                        onRemoveTrait = { id -> viewModel.removeTrait(id) },
-                        onAddTrait = { name, isBeauty -> viewModel.addCustomTrait(name, isBeauty) },
+                        onToggleTraitForImage = { imageIndex, traitId ->
+                            viewModel.toggleTraitForImage(imageIndex, traitId)
+                        },
+                        onRemoveTraitForImage = { imageIndex, traitId ->
+                            viewModel.removeTraitForImage(imageIndex, traitId)
+                        },
+                        onAddCustomTrait = { name, isBeauty ->
+                            viewModel.addCustomTrait(name, isBeauty)
+                        },
+                        onAddTraitFromSuggestion = { suggestion ->
+                            viewModel.addTraitFromSuggestion(suggestion)
+                        },
                         onUploadPhoto = { uri -> viewModel.uploadUserPhoto(uri, context) },
                         onGenerateWithAI = { viewModel.generateWithAI(context) },
                         onSubmitBid = { auctionId, email, amount ->
@@ -162,6 +172,10 @@ fun NaVerdadeApp(
                     FeedScreen(
                         state = state,
                         onToggleLike = { postId -> viewModel.toggleLike(postId) },
+                        onToggleFavorite = { postId -> viewModel.toggleFavorite(postId) },
+                        onOpenComments = { post -> viewModel.openComments(post) },
+                        onCloseComments = { viewModel.closeComments() },
+                        onAddComment = { postId, text -> viewModel.addComment(postId, text) },
                         onSubmitBid = { auctionId, email, amount ->
                             viewModel.submitBid(auctionId, email, amount)
                         }
