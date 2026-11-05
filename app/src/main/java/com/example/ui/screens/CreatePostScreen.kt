@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,9 +31,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -38,6 +43,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -58,9 +64,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.rememberAsyncImagePainter
 import com.example.R
 import com.example.model.AuctionItem
 import com.example.model.FeatureTrait
@@ -88,6 +94,7 @@ fun CreatePostScreen(
     onToggleTrait: (String) -> Unit,
     onRemoveTrait: (String) -> Unit,
     onAddTrait: (String, Boolean) -> Unit,
+    onUploadPhoto: (Uri) -> Unit,
     onGenerateWithAI: () -> Unit,
     onSubmitBid: (auctionId: String, email: String, amount: Double) -> Unit,
     modifier: Modifier = Modifier
@@ -95,6 +102,15 @@ fun CreatePostScreen(
     val scrollState = rememberScrollState()
     var showAddTraitDialog by remember { mutableStateOf(false) }
     var showBidDialog by remember { mutableStateOf(false) }
+
+    // Android Photo Picker (zero-permission storage API)
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onUploadPhoto(uri)
+        }
+    }
 
     val createAuction = state.auctions.find { it.id == "banner_create" }
         ?: AuctionItem(
@@ -269,7 +285,7 @@ fun CreatePostScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 2. MAIN PREVIEW PHOTO
+            // 2. MAIN PREVIEW PHOTO + UPLOAD TO SUPABASE STORAGE
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -278,15 +294,75 @@ fun CreatePostScreen(
                     .background(Color(0xFFF3F4F6))
                     .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
             ) {
-                val currentImageRes = previewThumbnails.getOrElse(state.selectedThumbnailIndex) {
-                    R.drawable.img_creator_main
+                if (state.uploadedPhotoUrl != null && state.selectedThumbnailIndex == 0) {
+                    Image(
+                        painter = rememberAsyncImagePainter(model = state.uploadedPhotoUrl),
+                        contentDescription = "Foto Carregada",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    val currentImageRes = previewThumbnails.getOrElse(state.selectedThumbnailIndex) {
+                        R.drawable.img_creator_main
+                    }
+                    Image(
+                        painter = painterResource(id = currentImageRes),
+                        contentDescription = "Foto Principal",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-                Image(
-                    painter = painterResource(id = currentImageRes),
-                    contentDescription = "Foto Principal",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+
+                // Upload button on top right of preview
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .clickable {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AddPhotoAlternate,
+                        contentDescription = "Trocar Foto",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Sua Foto",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                // Storage upload indicator
+                if (state.isUploadingPhoto) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = PrimaryGreen, modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Enviando para Supabase Storage...",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
 
                 // Current caption badge over preview
                 val currentCaption = when (state.selectedThumbnailIndex) {
@@ -315,7 +391,39 @@ fun CreatePostScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Upload Photo Action Button
+            OutlinedButton(
+                onClick = {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGreen),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MintBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .testTag("btn_upload_photo_gallery")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudUpload,
+                    contentDescription = null,
+                    tint = PrimaryGreen,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (state.uploadedPhotoUrl != null) "Trocar Foto da Galeria (Supabase Storage)"
+                    else "Enviar Foto da Galeria (Supabase Storage)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // 3. 4 THUMBNAILS CAROUSEL (1, 2, 3, 4)
             Row(
@@ -331,7 +439,6 @@ fun CreatePostScreen(
                             .clickable { onSelectThumbnail(index) }
                             .testTag("thumb_step_${index + 1}")
                     ) {
-                        // Badge 1, 2, 3, 4
                         Box(
                             modifier = Modifier
                                 .size(22.dp)
@@ -357,17 +464,25 @@ fun CreatePostScreen(
                                     shape = RoundedCornerShape(10.dp)
                                 )
                         ) {
-                            Image(
-                                painter = painterResource(id = imgRes),
-                                contentDescription = "Thumb ${index + 1}",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            if (index == 0 && state.uploadedPhotoUrl != null) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(model = state.uploadedPhotoUrl),
+                                    contentDescription = "Thumb ${index + 1}",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = imgRes),
+                                    contentDescription = "Thumb ${index + 1}",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
 
-                // Arrow indicator
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -418,7 +533,6 @@ fun CreatePostScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Buttons: + Adicionar beleza / + Adicionar feiura
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -492,7 +606,6 @@ fun CreatePostScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // "+ Criar traço personalizado"
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -516,7 +629,7 @@ fun CreatePostScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 5. LEGENDA DO POST (4 LINHAS + BOTÃO GERAR)
+            // 5. LEGENDA DO POST COM BOTÃO IA GEMINI
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -531,31 +644,47 @@ fun CreatePostScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Legenda do post",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
+                        Column {
+                            Text(
+                                text = "Legenda do post",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Gere com IA Gemini ou digite",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFFDCFCE7))
                                 .clickable { onGenerateCaptions() }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
                                 .testTag("btn_generate_captions")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = PrimaryGreen,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            if (state.isAiGeneratingCaptions) {
+                                CircularProgressIndicator(
+                                    color = PrimaryGreen,
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = PrimaryGreen,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Gerar",
-                                fontSize = 11.sp,
+                                text = if (state.isAiGeneratingCaptions) "Gerando..." else "Gerar com IA",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryGreen
                             )

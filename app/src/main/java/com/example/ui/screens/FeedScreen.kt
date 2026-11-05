@@ -477,7 +477,7 @@ fun FeedPostItem(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Post Images (4-image grid or single banner)
-        if (post.images.size >= 4) {
+        if (post.images.size >= 4 || post.imageUrls.size >= 4) {
             // 4-Image Grid for "Na Verdade" trend!
             Column(
                 modifier = Modifier
@@ -490,12 +490,14 @@ fun FeedPostItem(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     PostGridImage(
-                        res = post.images[0],
+                        res = post.images.getOrElse(0) { R.drawable.img_result_1 },
+                        url = post.imageUrls.getOrNull(0),
                         caption = post.stepCaptions.getOrNull(0),
                         modifier = Modifier.weight(1f)
                     )
                     PostGridImage(
-                        res = post.images[1],
+                        res = post.images.getOrElse(1) { R.drawable.img_result_2 },
+                        url = post.imageUrls.getOrNull(1),
                         caption = post.stepCaptions.getOrNull(1),
                         modifier = Modifier.weight(1f)
                     )
@@ -505,12 +507,14 @@ fun FeedPostItem(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     PostGridImage(
-                        res = post.images[2],
+                        res = post.images.getOrElse(2) { R.drawable.img_result_3 },
+                        url = post.imageUrls.getOrNull(2),
                         caption = post.stepCaptions.getOrNull(2),
                         modifier = Modifier.weight(1f)
                     )
                     PostGridImage(
-                        res = post.images[3],
+                        res = post.images.getOrElse(3) { R.drawable.img_result_4 },
+                        url = post.imageUrls.getOrNull(3),
                         caption = post.stepCaptions.getOrNull(3),
                         modifier = Modifier.weight(1f)
                     )
@@ -524,12 +528,21 @@ fun FeedPostItem(
                     .padding(horizontal = 14.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                Image(
-                    painter = painterResource(id = post.images.firstOrNull() ?: R.drawable.img_feed_post_1),
-                    contentDescription = "Post photo",
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (post.imageUrls.isNotEmpty()) {
+                    Image(
+                        painter = coil.compose.rememberAsyncImagePainter(model = post.imageUrls.first()),
+                        contentDescription = "Post photo",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = post.images.firstOrNull() ?: R.drawable.img_feed_post_1),
+                        contentDescription = "Post photo",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
 
@@ -627,6 +640,7 @@ fun FeedPostItem(
 @Composable
 fun PostGridImage(
     res: Int,
+    url: String? = null,
     caption: String?,
     modifier: Modifier = Modifier
 ) {
@@ -636,12 +650,21 @@ fun PostGridImage(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFFE5E7EB))
     ) {
-        Image(
-            painter = painterResource(id = res),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+        if (!url.isNullOrBlank()) {
+            Image(
+                painter = coil.compose.rememberAsyncImagePainter(model = url),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Image(
+                painter = painterResource(id = res),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         if (!caption.isNullOrBlank()) {
             Box(
                 modifier = Modifier

@@ -193,6 +193,28 @@ fun AuctionScreen(
                 lineHeight = 18.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFDCFCE7))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryGreen)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (state.isRealtimeConnected) "Supabase Realtime Ativo" else "Supabase Conectado",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PrimaryGreenDark
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -14,7 +14,8 @@ enum class PostType {
 }
 
 data class GenerationResult(
-    val images: List<Int>,
+    val images: List<Int> = emptyList(),
+    val imageUrls: List<String> = emptyList(),
     val captions: List<String>,
     val tiktokTitle: String,
     val postType: PostType

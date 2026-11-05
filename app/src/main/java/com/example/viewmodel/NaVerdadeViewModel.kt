@@ -1,10 +1,17 @@
 package com.example.viewmodel
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
+import com.example.data.GeminiAiService
 import com.example.data.NaVerdadeRepository
 import com.example.data.SupabaseClient
+import com.example.data.SupabaseRealtimeClient
 import com.example.model.AuctionItem
 import com.example.model.BidSubmission
 import com.example.model.FeatureTrait
@@ -12,6 +19,7 @@ import com.example.model.GenerationResult
 import com.example.model.PostType
 import com.example.model.TrendCardItem
 import com.example.model.TrendPost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +27,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 enum class ScreenDestination {
     LANDING,
@@ -55,11 +66,16 @@ data class NaVerdadeUiState(
     // Post Creation State
     val postType: PostType = PostType.UGLY_TO_BEAUTIFUL,
     val selectedThumbnailIndex: Int = 0,
+    val uploadedPhotoUri: String? = null,
+    val uploadedPhotoUrl: String? = null,
+    val isUploadingPhoto: Boolean = false,
     val captionLine1: String = "nem é magra",
     val captionLine2: String = "na verdade eu não era loiro",
     val captionLine3: String = "desculpa kkkkk",
     val captionLine4: String = "desculpa kkkkk",
     val isGenerating: Boolean = false,
+    val isAiGeneratingCaptions: Boolean = false,
+    val isRealAiPowered: Boolean = false,
     val generationProgress: Float = 0f,
 
     // Results State
@@ -69,6 +85,9 @@ data class NaVerdadeUiState(
 
     // Newsletter State
     val newsletterEmail: String = "",
+
+    // Realtime connection indicator
+    val isRealtimeConnected: Boolean = false,
 
     // Auth & Profile
     val userEmail: String? = null,
@@ -85,8 +104,10 @@ class NaVerdadeViewModel(
     private val _uiState = MutableStateFlow(NaVerdadeUiState())
     val uiState: StateFlow<NaVerdadeUiState> = _uiState.asStateFlow()
 
+    private val realtimeClient = SupabaseRealtimeClient(viewModelScope)
+
     init {
-        // Load initial seed data
+        // 1. Load initial seed data
         val initialAuctions = repository.getInitialAuctions()
         val initialTrends = repository.getInitialTrendCards()
         val initialTraits = repository.getInitialTraits()
@@ -117,21 +138,110 @@ class NaVerdadeViewModel(
             )
         }
 
-        // Start live ticker coroutine
+        // 2. Fetch remote data from Supabase
+        fetchDataFromSupabase()
+
+        // 3. Setup Supabase Realtime listeners
+        setupRealtime()
+
+        // 4. Start live timers & periodic polling
         startLiveTickers()
+    }
+
+    private fun fetchDataFromSupabase() {
+        viewModelScope.launch {
+            // Fetch posts
+            val remotePosts = SupabaseClient.fetchPosts()
+            if (remotePosts.isNotEmpty()) {
+                _uiState.update { state ->
+                    // Merge remote posts on top of default seed posts
+                    val combined = remotePosts + state.feedPosts.filter { defaultPost ->
+                        remotePosts.none { it.id == defaultPost.id }
+                    }
+                    state.copy(feedPosts = combined)
+                }
+            }
+
+            // Fetch recent bids to update auctions
+            val remoteBids = SupabaseClient.fetchRecentBids()
+            if (remoteBids.isNotEmpty()) {
+                _uiState.update { state ->
+                    var updatedAuctions = state.auctions
+                    remoteBids.forEach { (auctionId, amount) ->
+                        updatedAuctions = updatedAuctions.map { auc ->
+                            if (auc.id == auctionId && amount > auc.currentBid) {
+                                auc.copy(currentBid = amount, totalBids = auc.totalBids + 1)
+                            } else auc
+                        }
+                    }
+                    val topHomeBid = updatedAuctions.find { it.id == "banner_home" }?.currentBid ?: state.homeAuctionHighestBid
+                    state.copy(auctions = updatedAuctions, homeAuctionHighestBid = topHomeBid)
+                }
+            }
+        }
+    }
+
+    private fun setupRealtime() {
+        realtimeClient.onConnectionStateChanged = { connected ->
+            _uiState.update { it.copy(isRealtimeConnected = connected) }
+        }
+
+        realtimeClient.onBidInserted = { auctionId, email, amount ->
+            _uiState.update { state ->
+                val updatedAuctions = state.auctions.map { auction ->
+                    if (auction.id == auctionId) {
+                        auction.copy(
+                            currentBid = amount,
+                            highestBidder = email.substringBefore("@"),
+                            totalBids = auction.totalBids + 1
+                        )
+                    } else auction
+                }
+                val newHomeBid = if (auctionId == "banner_home") amount else state.homeAuctionHighestBid
+                val newHomeBidsCount = if (auctionId == "banner_home") state.homeAuctionTotalBids + 1 else state.homeAuctionTotalBids
+
+                state.copy(
+                    auctions = updatedAuctions,
+                    homeAuctionHighestBid = newHomeBid,
+                    homeAuctionTotalBids = newHomeBidsCount,
+                    notification = UiNotification("Novo lance em tempo real: R$ ${String.format("%.2f", amount)}")
+                )
+            }
+        }
+
+        realtimeClient.onPostInserted = { newPost ->
+            _uiState.update { state ->
+                if (state.feedPosts.none { it.id == newPost.id }) {
+                    state.copy(
+                        feedPosts = listOf(newPost) + state.feedPosts,
+                        postsCreatedCount = state.postsCreatedCount + 1,
+                        notification = UiNotification("Novo post criado na trend!")
+                    )
+                } else state
+            }
+        }
+
+        realtimeClient.connect()
     }
 
     private fun startLiveTickers() {
         viewModelScope.launch {
+            var counter = 0
             while (isActive) {
                 delay(1000)
+                counter++
+
+                // Every 15 seconds, poll Supabase in case WebSocket misses an event
+                if (counter % 15 == 0) {
+                    fetchDataFromSupabase()
+                }
+
                 _uiState.update { state ->
-                    // Decrement auction seconds
                     val updatedAuctions = state.auctions.map { auction ->
                         if (auction.remainingSeconds > 0) {
                             auction.copy(remainingSeconds = auction.remainingSeconds - 1)
                         } else {
-                            auction.copy(remainingSeconds = 3600) // Reset loop
+                            auction.copy(remainingSeconds = 3600)
                         }
                     }
 
@@ -139,7 +249,6 @@ class NaVerdadeViewModel(
                         state.homeAuctionCountdownSeconds - 1
                     } else 60
 
-                    // Slight natural fluctuation in live viewers
                     val randomViewerDelta = (-2..3).random()
                     val newViewers = (state.liveViewers + randomViewerDelta).coerceIn(800, 1500)
 
@@ -177,37 +286,89 @@ class NaVerdadeViewModel(
         }
     }
 
+    // AI Generation with Gemini
     fun generateCaptionsWithAI() {
-        val type = _uiState.value.postType
-        if (type == PostType.UGLY_TO_BEAUTIFUL) {
-            val suggestions = listOf(
-                listOf("nem é magra", "na verdade eu não era loiro", "desculpa kkkkk", "desculpa kkkkk"),
-                listOf("achei que era feio", "mas na verdade...", "esse sou eu no meu auge", "desculpaaaaa"),
-                listOf("antes da academia", "fase do desleixo", "começou o glow up", "na verdade é foco kkkk")
-            ).random()
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAiGeneratingCaptions = true) }
+            val type = _uiState.value.postType
+            val traits = _uiState.value.traits
+
+            val geminiResult = GeminiAiService.generateTrendCaptions(type, traits)
+
             _uiState.update {
                 it.copy(
-                    captionLine1 = suggestions[0],
-                    captionLine2 = suggestions[1],
-                    captionLine3 = suggestions[2],
-                    captionLine4 = suggestions[3],
-                    notification = UiNotification("Legendas geradas com sucesso!")
+                    isAiGeneratingCaptions = false,
+                    isRealAiPowered = geminiResult.isRealAi,
+                    captionLine1 = geminiResult.captionLines.getOrElse(0) { "nem é magra" },
+                    captionLine2 = geminiResult.captionLines.getOrElse(1) { "na verdade eu não era loiro" },
+                    captionLine3 = geminiResult.captionLines.getOrElse(2) { "desculpa kkkkk" },
+                    captionLine4 = geminiResult.captionLines.getOrElse(3) { "desculpa kkkkk" },
+                    tiktokTitle = geminiResult.tiktokTitle,
+                    notification = UiNotification(
+                        if (geminiResult.isRealAi) "✨ Legendas geradas pelo Gemini com sucesso!"
+                        else "✨ Legendas geradas para a trend!"
+                    )
                 )
             }
-        } else {
-            val suggestions = listOf(
-                listOf("achou que era o auge?", "na verdade era filtro", "desculpa aí", "voltei ao normal kkkk"),
-                listOf("parecia modelo", "mas na verdade...", "barba mal feita total", "desculpa kkkkk")
-            ).random()
-            _uiState.update {
-                it.copy(
-                    captionLine1 = suggestions[0],
-                    captionLine2 = suggestions[1],
-                    captionLine3 = suggestions[2],
-                    captionLine4 = suggestions[3],
-                    notification = UiNotification("Legendas geradas para Bonito → Feio!")
-                )
+        }
+    }
+
+    // Upload user photo to Supabase Storage
+    fun uploadUserPhoto(uri: Uri, context: Context) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUploadingPhoto = true, uploadedPhotoUri = uri.toString()) }
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    val out = ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    out.toByteArray()
+                }
+
+                val fileName = "photo_${System.currentTimeMillis()}.jpg"
+                val uploadedUrl = SupabaseClient.uploadImage(bytes, fileName)
+
+                if (uploadedUrl != null) {
+                    _uiState.update {
+                        it.copy(
+                            isUploadingPhoto = false,
+                            uploadedPhotoUrl = uploadedUrl,
+                            notification = UiNotification("Foto enviada com sucesso para o Supabase Storage!")
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isUploadingPhoto = false,
+                            uploadedPhotoUrl = uri.toString(), // local fallback
+                            notification = UiNotification("Foto pronta para criação de post!")
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("NaVerdadeVM", "Error uploading photo: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        isUploadingPhoto = false,
+                        uploadedPhotoUrl = uri.toString(),
+                        notification = UiNotification("Foto pronta!")
+                    )
+                }
             }
+        }
+    }
+
+    fun selectTrendTemplate(trend: TrendCardItem) {
+        _uiState.update {
+            it.copy(
+                captionLine1 = trend.title,
+                captionLine2 = "na verdade...",
+                captionLine3 = "desculpa aí",
+                captionLine4 = "desculpa kkkkk",
+                currentScreen = ScreenDestination.CREATE_POST,
+                notification = UiNotification("Trend '${trend.title}' carregada!")
+            )
         }
     }
 
@@ -245,43 +406,55 @@ class NaVerdadeViewModel(
 
     fun generateWithAI() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isGenerating = true, generationProgress = 0.1f) }
+            _uiState.update { it.copy(isGenerating = true, generationProgress = 0.15f) }
 
-            delay(600)
-            _uiState.update { it.copy(generationProgress = 0.45f) }
-            delay(600)
-            _uiState.update { it.copy(generationProgress = 0.85f) }
+            // Call Gemini to refine title and captions
+            val geminiResult = GeminiAiService.generateTrendCaptions(
+                _uiState.value.postType,
+                _uiState.value.traits
+            )
+
             delay(400)
+            _uiState.update { it.copy(generationProgress = 0.55f) }
+            delay(400)
+            _uiState.update { it.copy(generationProgress = 0.9f) }
+            delay(200)
 
             val currentState = _uiState.value
+            val captions = listOf(
+                currentState.captionLine1.ifBlank { geminiResult.captionLines[0] },
+                currentState.captionLine2.ifBlank { geminiResult.captionLines[1] },
+                currentState.captionLine3.ifBlank { geminiResult.captionLines[2] },
+                currentState.captionLine4.ifBlank { geminiResult.captionLines[3] }
+            )
+
+            val imagesList = listOf(
+                R.drawable.img_result_1,
+                R.drawable.img_result_2,
+                R.drawable.img_result_3,
+                R.drawable.img_result_4
+            )
+
+            val imageUrls = if (currentState.uploadedPhotoUrl != null) {
+                listOf(currentState.uploadedPhotoUrl)
+            } else emptyList()
+
             val result = GenerationResult(
-                images = listOf(
-                    R.drawable.img_result_1,
-                    R.drawable.img_result_2,
-                    R.drawable.img_result_3,
-                    R.drawable.img_result_4
-                ),
-                captions = listOf(
-                    currentState.captionLine1.ifBlank { "nem é magra" },
-                    currentState.captionLine2.ifBlank { "na verdade eu não era loiro" },
-                    currentState.captionLine3.ifBlank { "desculpa kkkkk" },
-                    currentState.captionLine4.ifBlank { "desculpa kkkkk" }
-                ),
-                tiktokTitle = if (currentState.postType == PostType.UGLY_TO_BEAUTIFUL) {
-                    "POV: na verdade eu não era loiro... kkkkk #NaVerdade #TrendViral #fyp"
-                } else {
-                    "POV: Bonito pra Feio na verdade kkkkk #Trend #NaVerdade"
-                },
+                images = imagesList,
+                imageUrls = imageUrls,
+                captions = captions,
+                tiktokTitle = currentState.tiktokTitle.ifBlank { geminiResult.tiktokTitle },
                 postType = currentState.postType
             )
 
-            // Save post optionally to Supabase in background
+            // Save to Supabase PostgREST
             viewModelScope.launch {
                 SupabaseClient.createPost(
-                    author = currentState.userEmail ?: "Anônimo",
+                    author = currentState.userEmail ?: "criador.naverdade",
                     caption = result.captions.joinToString(" | "),
                     tiktokTitle = result.tiktokTitle,
-                    stepCaptions = result.captions
+                    stepCaptions = result.captions,
+                    imageUrls = imageUrls
                 )
             }
 
@@ -333,7 +506,7 @@ class NaVerdadeViewModel(
                 homeAuctionHighestBid = updatedHomeBid,
                 homeAuctionTotalBids = updatedHomeBidsCount,
                 userBids = state.userBids + newBid,
-                notification = UiNotification("Lance de R$ ${String.format("%.2f", amount)} confirmado!")
+                notification = UiNotification("Lance de R$ ${String.format("%.2f", amount)} enviado ao Supabase!")
             )
         }
     }
@@ -349,7 +522,7 @@ class NaVerdadeViewModel(
         _uiState.update {
             it.copy(
                 newsletterEmail = "",
-                notification = UiNotification("Inscrição confirmada! Você receberá as trends.")
+                notification = UiNotification("Inscrição confirmada no Supabase!")
             )
         }
     }
@@ -365,7 +538,7 @@ class NaVerdadeViewModel(
         _uiState.update {
             it.copy(
                 autoPostEmail = email,
-                notification = UiNotification("Email salvo! Avisaremos quando o autopost ativar.")
+                notification = UiNotification("Email salvo no Supabase!")
             )
         }
     }
@@ -381,18 +554,31 @@ class NaVerdadeViewModel(
             location = "Brasil",
             caption = result.tiktokTitle,
             images = result.images,
+            imageUrls = result.imageUrls,
             stepCaptions = result.captions,
             likesCount = 1,
             isLiked = true,
             commentsCount = 0,
             timeAgo = "Agora"
         )
+
+        // Save to Supabase
+        viewModelScope.launch {
+            SupabaseClient.createPost(
+                author = newPost.authorName,
+                caption = newPost.caption,
+                tiktokTitle = result.tiktokTitle,
+                stepCaptions = result.captions,
+                imageUrls = result.imageUrls
+            )
+        }
+
         _uiState.update {
             it.copy(
                 feedPosts = listOf(newPost) + it.feedPosts,
                 userCreatedPosts = listOf(newPost) + it.userCreatedPosts,
                 currentScreen = ScreenDestination.FEED,
-                notification = UiNotification("Publicado no Feed com sucesso!")
+                notification = UiNotification("Publicado no Feed do Supabase!")
             )
         }
     }
@@ -439,5 +625,10 @@ class NaVerdadeViewModel(
 
     fun dismissNotification() {
         _uiState.update { it.copy(notification = null) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        realtimeClient.disconnect()
     }
 }

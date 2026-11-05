@@ -136,7 +136,7 @@ fun ProfileScreen(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Supabase Conectado",
+                        text = if (state.isRealtimeConnected) "Supabase Realtime Ativo" else "Supabase Conectado",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = PrimaryGreen

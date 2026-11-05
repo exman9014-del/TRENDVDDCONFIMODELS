@@ -89,6 +89,7 @@ import kotlinx.coroutines.delay
 fun LandingScreen(
     state: NaVerdadeUiState,
     onCreatePostClick: () -> Unit,
+    onSelectTrend: (TrendCardItem) -> Unit,
     onSubmitBid: (auctionId: String, email: String, amount: Double) -> Unit,
     onSubscribeNewsletter: (email: String) -> Unit,
     modifier: Modifier = Modifier
@@ -281,7 +282,7 @@ fun LandingScreen(
                     .testTag("trend_auto_carousel")
             ) {
                 items(state.trendCards) { card ->
-                    TrendAutoCard(card = card, onClick = onCreatePostClick)
+                    TrendAutoCard(card = card, onClick = { onSelectTrend(card) })
                 }
             }
         }
@@ -666,12 +667,21 @@ fun TrendAutoCard(
                     .fillMaxWidth()
                     .height(150.dp)
             ) {
-                Image(
-                    painter = painterResource(id = card.imageRes),
-                    contentDescription = card.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (card.imageUrl != null) {
+                    Image(
+                        painter = coil.compose.rememberAsyncImagePainter(model = card.imageUrl),
+                        contentDescription = card.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = card.imageRes),
+                        contentDescription = card.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 // Overlay text
                 Box(
                     modifier = Modifier

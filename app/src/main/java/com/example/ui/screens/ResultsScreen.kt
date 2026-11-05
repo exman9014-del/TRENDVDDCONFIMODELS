@@ -199,12 +199,22 @@ fun ResultsScreen(
                             .height(290.dp)
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            Image(
-                                painter = painterResource(id = imgRes),
-                                contentDescription = "Imagem $index",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            val remoteUrl = result?.imageUrls?.getOrNull(index)
+                            if (!remoteUrl.isNullOrBlank()) {
+                                Image(
+                                    painter = coil.compose.rememberAsyncImagePainter(model = remoteUrl),
+                                    contentDescription = "Imagem $index",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = imgRes),
+                                    contentDescription = "Imagem $index",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
 
                             // Step badge on top
                             Box(

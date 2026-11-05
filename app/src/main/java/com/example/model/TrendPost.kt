@@ -5,10 +5,12 @@ data class TrendPost(
     val authorName: String,
     val authorHandle: String,
     val authorAvatarRes: Int? = null,
+    val authorAvatarUrl: String? = null,
     val isVerified: Boolean = true,
     val location: String = "",
     val caption: String = "",
     val images: List<Int> = emptyList(),
+    val imageUrls: List<String> = emptyList(),
     val stepCaptions: List<String> = emptyList(),
     val likesCount: Int = 0,
     val isLiked: Boolean = false,
@@ -20,6 +22,7 @@ data class TrendCardItem(
     val id: String,
     val title: String,
     val caption: String,
-    val imageRes: Int,
+    val imageRes: Int = 0,
+    val imageUrl: String? = null,
     val postsPerHour: String
 )

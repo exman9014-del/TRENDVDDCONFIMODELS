@@ -80,6 +80,8 @@ fun NaVerdadeApp(
         }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -104,6 +106,7 @@ fun NaVerdadeApp(
                     LandingScreen(
                         state = state,
                         onCreatePostClick = { viewModel.navigateTo(ScreenDestination.CREATE_POST) },
+                        onSelectTrend = { trend -> viewModel.selectTrendTemplate(trend) },
                         onSubmitBid = { auctionId, email, amount ->
                             viewModel.submitBid(auctionId, email, amount)
                         },
@@ -126,6 +129,7 @@ fun NaVerdadeApp(
                         onToggleTrait = { id -> viewModel.toggleTrait(id) },
                         onRemoveTrait = { id -> viewModel.removeTrait(id) },
                         onAddTrait = { name, isBeauty -> viewModel.addCustomTrait(name, isBeauty) },
+                        onUploadPhoto = { uri -> viewModel.uploadUserPhoto(uri, context) },
                         onGenerateWithAI = { viewModel.generateWithAI() },
                         onSubmitBid = { auctionId, email, amount ->
                             viewModel.submitBid(auctionId, email, amount)
