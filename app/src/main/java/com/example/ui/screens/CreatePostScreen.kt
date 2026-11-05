@@ -183,9 +183,14 @@ fun CreatePostScreen(
                                 strokeWidth = 2.5.dp
                             )
                             Spacer(modifier = Modifier.width(10.dp))
+                            val progressText = when {
+                                state.generationProgress < 0.4f -> "Criando legendas com Gemini..."
+                                state.generationProgress < 0.8f -> "Gerando 4 imagens com IA..."
+                                else -> "Finalizando post no Supabase..."
+                            }
                             Text(
-                                text = "Gerando 4 imagens com IA...",
-                                fontSize = 15.sp,
+                                text = progressText,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )

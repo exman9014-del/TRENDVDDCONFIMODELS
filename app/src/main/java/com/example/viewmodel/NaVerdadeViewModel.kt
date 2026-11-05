@@ -404,21 +404,24 @@ class NaVerdadeViewModel(
         }
     }
 
-    fun generateWithAI() {
+    fun generateWithAI(context: Context) {
         viewModelScope.launch {
             _uiState.update { it.copy(isGenerating = true, generationProgress = 0.15f) }
 
-            // Call Gemini to refine title and captions
+            // 1. Call Gemini to generate customized viral captions and TikTok title
             val geminiResult = GeminiAiService.generateTrendCaptions(
                 _uiState.value.postType,
                 _uiState.value.traits
             )
+            _uiState.update { it.copy(generationProgress = 0.35f) }
 
-            delay(400)
-            _uiState.update { it.copy(generationProgress = 0.55f) }
-            delay(400)
-            _uiState.update { it.copy(generationProgress = 0.9f) }
-            delay(200)
+            // 2. Call Imagen 3 / Gemini to generate the 4 trend transformation images
+            val generatedAiImages = GeminiAiService.generateFourTrendImages(
+                context = context,
+                postType = _uiState.value.postType,
+                traits = _uiState.value.traits
+            )
+            _uiState.update { it.copy(generationProgress = 0.85f) }
 
             val currentState = _uiState.value
             val captions = listOf(
@@ -428,20 +431,22 @@ class NaVerdadeViewModel(
                 currentState.captionLine4.ifBlank { geminiResult.captionLines[3] }
             )
 
-            val imagesList = listOf(
+            val defaultImagesList = listOf(
                 R.drawable.img_result_1,
                 R.drawable.img_result_2,
                 R.drawable.img_result_3,
                 R.drawable.img_result_4
             )
 
-            val imageUrls = if (currentState.uploadedPhotoUrl != null) {
+            val finalImageUrls = if (generatedAiImages.isNotEmpty()) {
+                generatedAiImages
+            } else if (currentState.uploadedPhotoUrl != null) {
                 listOf(currentState.uploadedPhotoUrl)
             } else emptyList()
 
             val result = GenerationResult(
-                images = imagesList,
-                imageUrls = imageUrls,
+                images = defaultImagesList,
+                imageUrls = finalImageUrls,
                 captions = captions,
                 tiktokTitle = currentState.tiktokTitle.ifBlank { geminiResult.tiktokTitle },
                 postType = currentState.postType
@@ -454,8 +459,16 @@ class NaVerdadeViewModel(
                     caption = result.captions.joinToString(" | "),
                     tiktokTitle = result.tiktokTitle,
                     stepCaptions = result.captions,
-                    imageUrls = imageUrls
+                    imageUrls = finalImageUrls
                 )
+            }
+
+            val successMsg = if (generatedAiImages.isNotEmpty()) {
+                "✨ 4 imagens geradas com IA (Imagen 3)!"
+            } else if (geminiResult.isRealAi) {
+                "✨ Legendas geradas pelo Gemini!"
+            } else {
+                "Post da trend gerado com sucesso!"
             }
 
             _uiState.update {
@@ -465,7 +478,7 @@ class NaVerdadeViewModel(
                     latestResult = result,
                     currentScreen = ScreenDestination.RESULTS,
                     postsCreatedCount = it.postsCreatedCount + 1,
-                    notification = UiNotification("Post gerado com sucesso!")
+                    notification = UiNotification(successMsg)
                 )
             }
         }

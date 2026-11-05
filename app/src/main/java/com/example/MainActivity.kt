@@ -130,7 +130,7 @@ fun NaVerdadeApp(
                         onRemoveTrait = { id -> viewModel.removeTrait(id) },
                         onAddTrait = { name, isBeauty -> viewModel.addCustomTrait(name, isBeauty) },
                         onUploadPhoto = { uri -> viewModel.uploadUserPhoto(uri, context) },
-                        onGenerateWithAI = { viewModel.generateWithAI() },
+                        onGenerateWithAI = { viewModel.generateWithAI(context) },
                         onSubmitBid = { auctionId, email, amount ->
                             viewModel.submitBid(auctionId, email, amount)
                         }

@@ -1,10 +1,14 @@
 package com.example.data
 
+import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.example.BuildConfig
 import com.example.model.FeatureTrait
 import com.example.model.PostType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -12,6 +16,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 data class GeminiGenerationOutput(
@@ -25,25 +31,28 @@ object GeminiAiService {
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    private fun getApiKey(): String {
+        return try {
+            val key = BuildConfig.GEMINI_API_KEY
+            if (key.isNotBlank() && key != "MY_GEMINI_API_KEY" && !key.contains("PLACEHOLDER")) {
+                key
+            } else ""
+        } catch (e: Throwable) {
+            ""
+        }
+    }
 
     suspend fun generateTrendCaptions(
         postType: PostType,
         activeTraits: List<FeatureTrait>
     ): GeminiGenerationOutput = withContext(Dispatchers.IO) {
-        val apiKey = try {
-            BuildConfig.GEMINI_API_KEY
-        } catch (e: Throwable) {
-            ""
-        }
-
-        val hasValidKey = apiKey.isNotBlank() &&
-                apiKey != "MY_GEMINI_API_KEY" &&
-                !apiKey.contains("PLACEHOLDER")
-
-        if (hasValidKey) {
+        val apiKey = getApiKey()
+        if (apiKey.isNotBlank()) {
             try {
                 val beautyTraits = activeTraits.filter { it.isBeauty && it.isEnabled }.map { it.name }
                 val uglyTraits = activeTraits.filter { !it.isBeauty && it.isEnabled }.map { it.name }
@@ -116,7 +125,7 @@ object GeminiAiService {
                             val l4 = parsed.optString("line4", "desculpa kkkkk")
                             val title = parsed.optString("tiktok_title", "POV: na verdade... kkkk #NaVerdade #Trend")
 
-                            Log.d(TAG, "Gemini generated successfully: $l1 | $l2 | $l3 | $l4")
+                            Log.d(TAG, "Gemini generated text successfully: $l1 | $l2 | $l3 | $l4")
                             return@withContext GeminiGenerationOutput(
                                 captionLines = listOf(l1, l2, l3, l4),
                                 tiktokTitle = title,
@@ -124,23 +133,132 @@ object GeminiAiService {
                             )
                         }
                     } else {
-                        Log.w(TAG, "Gemini request failed: ${response.code} ${response.message}")
+                        Log.w(TAG, "Gemini text request failed: ${response.code} ${response.message}")
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Gemini error: ${e.message}", e)
+                Log.e(TAG, "Gemini text error: ${e.message}", e)
             }
-        } else {
-            Log.d(TAG, "No GEMINI_API_KEY provided in BuildConfig, using contextual generator fallback")
         }
 
-        // Contextual dynamic fallback tailored to user traits
+        // Contextual dynamic fallback
         val output = generateContextualCaptions(postType, activeTraits)
         return@withContext GeminiGenerationOutput(
             captionLines = output.first,
             tiktokTitle = output.second,
             isRealAi = false
         )
+    }
+
+    /**
+     * Generates all 4 transformation images concurrently with Google Imagen 3 API.
+     * Returns a list of 4 file URIs or Supabase Storage URLs.
+     */
+    suspend fun generateFourTrendImages(
+        context: Context,
+        postType: PostType,
+        traits: List<FeatureTrait>
+    ): List<String> = coroutineScope {
+        val apiKey = getApiKey()
+        if (apiKey.isBlank()) {
+            Log.d(TAG, "No valid GEMINI_API_KEY for image generation, using curated assets")
+            return@coroutineScope emptyList()
+        }
+
+        val beauty = traits.filter { it.isBeauty && it.isEnabled }.joinToString(", ") { it.name }
+        val ugly = traits.filter { !it.isBeauty && it.isEnabled }.joinToString(", ") { it.name }
+
+        val prompts = if (postType == PostType.UGLY_TO_BEAUTIFUL) {
+            listOf(
+                "Candid realistic mobile phone photo of a Brazilian young person looking unkempt, casual selfie, slightly unflattering angle, disheveled: $ugly, natural indoor lighting, 4k",
+                "Candid portrait of the same person smiling casually, natural lighting, looking into the camera playfully, slightly messy hair, authentic aesthetic",
+                "Candid portrait of the same person cheerfully waving hand and laughing, cozy gray hoodie, charming natural expression, realistic mobile portrait",
+                "Gorgeous glow-up portrait of the same person, handsome stylish look: $beauty, golden hour sunlight, aesthetic outdoor coastal background, high quality portrait"
+            )
+        } else {
+            listOf(
+                "Stunning model portrait of a gorgeous Brazilian person: $beauty, studio lighting, flawless aesthetic, elegant",
+                "Candid portrait of the same person outdoors taking off sunglasses and smiling wryly, natural daylight",
+                "Funny candid shot of the same person laughing at camera with messy hair and casual sweatshirt, warm lighting",
+                "Hilarious realistic reality-check portrait of the same person looking exhausted and funny, unkempt style: $ugly, candid mobile photo"
+            )
+        }
+
+        Log.d(TAG, "Starting parallel Imagen 3 generation for 4 photos...")
+        val d1 = async { generateSingleImageWithImagen(context, prompts[0], "img_trend_1_${System.currentTimeMillis()}") }
+        val d2 = async { generateSingleImageWithImagen(context, prompts[1], "img_trend_2_${System.currentTimeMillis()}") }
+        val d3 = async { generateSingleImageWithImagen(context, prompts[2], "img_trend_3_${System.currentTimeMillis()}") }
+        val d4 = async { generateSingleImageWithImagen(context, prompts[3], "img_trend_4_${System.currentTimeMillis()}") }
+
+        val res1 = d1.await()
+        val res2 = d2.await()
+        val res3 = d3.await()
+        val res4 = d4.await()
+
+        val results = listOfNotNull(res1, res2, res3, res4)
+        Log.d(TAG, "Imagen 3 finished: ${results.size}/4 images generated")
+        results
+    }
+
+    private suspend fun generateSingleImageWithImagen(
+        context: Context,
+        prompt: String,
+        fileNamePrefix: String
+    ): String? = withContext(Dispatchers.IO) {
+        val apiKey = getApiKey()
+        if (apiKey.isBlank()) return@withContext null
+
+        try {
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$apiKey"
+            val payload = JSONObject().apply {
+                put("instances", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("prompt", prompt)
+                    })
+                })
+                put("parameters", JSONObject().apply {
+                    put("sampleCount", 1)
+                    put("aspectRatio", "3:4")
+                    put("outputMimeType", "image/jpeg")
+                })
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string().orEmpty()
+                    val root = JSONObject(body)
+                    val predictions = root.optJSONArray("predictions")
+                    if (predictions != null && predictions.length() > 0) {
+                        val first = predictions.getJSONObject(0)
+                        val base64Data = first.optString("bytesBase64Encoded")
+                        if (base64Data.isNotBlank()) {
+                            val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+
+                            // 1. Try uploading to Supabase Storage first for cloud durability
+                            val supabaseUrl = SupabaseClient.uploadImage(imageBytes, "$fileNamePrefix.jpg")
+                            if (supabaseUrl != null) {
+                                return@withContext supabaseUrl
+                            }
+
+                            // 2. Fallback to local app cache file URI
+                            val cacheFile = File(context.cacheDir, "$fileNamePrefix.jpg")
+                            FileOutputStream(cacheFile).use { it.write(imageBytes) }
+                            return@withContext cacheFile.toURI().toString()
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Imagen 3 error: ${response.code} ${response.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Imagen 3 generation exception: ${e.message}")
+        }
+        null
     }
 
     private fun generateContextualCaptions(
