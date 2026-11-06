@@ -23,6 +23,7 @@ export default function ResultsView({
   const [copied, setCopied] = useState(false);
   const [autoEmail, setAutoEmail] = useState('');
   const [emailSaved, setEmailSaved] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSaved, setDownloadSaved] = useState(false);
 
   const handleCopyTitle = () => {
@@ -39,6 +40,57 @@ export default function ResultsView({
     }
   };
 
+  // REAL BROWSER DOWNLOAD FUNCTION (FIXED)
+  const downloadSingleImage = async (imgSrc: string, index: number) => {
+    try {
+      if (imgSrc.startsWith('data:') || imgSrc.startsWith('blob:')) {
+        const a = document.createElement('a');
+        a.href = imgSrc;
+        a.download = `na_verdade_foto_${index + 1}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      const res = await fetch(imgSrc);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `na_verdade_foto_${index + 1}.png`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(blobUrl);
+      document.body.removeChild(a);
+    } catch (err) {
+      const a = document.createElement('a');
+      a.href = imgSrc;
+      a.download = `na_verdade_foto_${index + 1}.png`;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    setIsDownloading(true);
+    try {
+      for (let i = 0; i < resultData.images.length; i++) {
+        await downloadSingleImage(resultData.images[i], i);
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      setDownloadSaved(true);
+    } catch (e) {
+      console.warn('Download error:', e);
+      setDownloadSaved(true);
+    } finally {
+      setIsDownloading(false);
+      setTimeout(() => setDownloadSaved(false), 3500);
+    }
+  };
+
   return (
     <div className="p-4 space-y-4 pb-20">
       {/* Top action header */}
@@ -52,16 +104,16 @@ export default function ResultsView({
       </div>
 
       <div className="text-center space-y-1">
-        <h1 className="text-lg font-black text-gray-900">Suas 4 imagens geradas</h1>
-        <p className="text-xs text-gray-500">Deslize para ver todas</p>
+        <h1 className="text-lg font-black text-gray-900">Suas {resultData.images.length} imagens geradas</h1>
+        <p className="text-xs text-gray-500">Deslize para ver todas e baixe para a sua galeria</p>
       </div>
 
-      {/* 1. CARROSSEL DAS 4 IMAGENS GERADAS COM LEGENDAS */}
+      {/* 1. CARROSSEL DAS IMAGENS GERADAS COM LEGENDAS */}
       <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-2 px-1">
         {resultData.images.map((img, idx) => (
           <div
             key={idx}
-            className="shrink-0 w-44 h-72 rounded-2xl overflow-hidden relative shadow-md bg-gray-100 border border-gray-200"
+            className="shrink-0 w-44 h-72 rounded-2xl overflow-hidden relative shadow-md bg-gray-100 border border-gray-200 group"
           >
             <img
               src={img}
@@ -69,8 +121,18 @@ export default function ResultsView({
               className="w-full h-full object-cover"
             />
             <span className="absolute top-2 left-2 bg-black/60 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
-              {idx + 1}/4
+              {idx + 1}/{resultData.images.length}
             </span>
+
+            {/* Single image download button */}
+            <button
+              onClick={() => downloadSingleImage(img, idx)}
+              className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full backdrop-blur-xs transition shadow-sm"
+              title="Baixar esta imagem"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+
             <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/50 to-transparent p-3 pt-6">
               <p className="text-white font-extrabold text-xs leading-snug drop-shadow-sm">
                 {resultData.captions[idx] || 'desculpa kkkkk'}
@@ -82,7 +144,7 @@ export default function ResultsView({
 
       {/* Dots indicator */}
       <div className="flex justify-center gap-1.5 py-1">
-        {[0, 1, 2, 3].map((i) => (
+        {resultData.images.map((_, i) => (
           <span
             key={i}
             className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-[#00A86B]' : 'bg-gray-300'}`}
@@ -160,14 +222,16 @@ export default function ResultsView({
       {/* 5. BOTÕES: BAIXAR IMAGENS E PUBLICAR NO FEED */}
       <div className="space-y-2 pt-1">
         <button
-          onClick={() => {
-            setDownloadSaved(true);
-            setTimeout(() => setDownloadSaved(false), 2000);
-          }}
-          className="w-full py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition"
+          onClick={handleDownloadAll}
+          disabled={isDownloading}
+          className="w-full py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition disabled:opacity-60"
         >
-          <Download className="w-4 h-4" />
-          {downloadSaved ? 'Imagens Baixadas com Sucesso! ✓' : 'Baixar Imagens'}
+          <Download className="w-4 h-4 text-emerald-600" />
+          {isDownloading
+            ? 'Baixando Imagens para o seu Dispositivo...'
+            : downloadSaved
+            ? 'Imagens Baixadas com Sucesso! ✓'
+            : `Baixar Todas (${resultData.images.length} Imagens)`}
         </button>
 
         <button

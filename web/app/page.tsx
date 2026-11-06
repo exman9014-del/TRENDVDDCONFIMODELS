@@ -12,6 +12,7 @@ import { ProfileView } from '../components/ProfileView';
 import BidModal from '../components/BidModal';
 import AddTraitModal from '../components/AddTraitModal';
 import { supabase } from '../lib/supabase';
+import { generateTrendImagesFromUserPhoto } from '../lib/imageGenerator';
 
 interface AuctionData {
   id: string;
@@ -373,19 +374,34 @@ export default function HomePage() {
   };
 
   // Generate with AI handler
-  const handleGeneratePost = (data: {
+  const handleGeneratePost = async (data: {
     postType: 'UGLY_TO_BEAUTIFUL' | 'BEAUTIFUL_TO_UGLY';
     captions: string[];
     userPhotoUrl?: string;
   }) => {
-    const imagesToUse = [
-      data.userPhotoUrl || '/img_result_1.png',
-      '/img_result_2.png',
-      '/img_result_3.png',
-      '/img_result_4.png',
-    ];
-    while (imagesToUse.length < data.captions.length) {
-      imagesToUse.push('/img_result_1.png');
+    let imagesToUse: string[] = [];
+
+    if (data.userPhotoUrl) {
+      // User uploaded their photo:
+      // Generate container 0, 1, 2... based on user photo with their specific active traits!
+      // Container 3 (the 4th/last container) is ALWAYS the exact user photo untouched!
+      imagesToUse = await generateTrendImagesFromUserPhoto(
+        data.userPhotoUrl,
+        containersCount,
+        imageTraitsMap,
+        data.postType
+      );
+    } else {
+      // Default curated sequence with the 4th container as the natural portrait
+      imagesToUse = [
+        '/img_result_1.png',
+        '/img_result_2.png',
+        '/img_result_3.png',
+        '/img_creator_main.png',
+      ];
+      while (imagesToUse.length < data.captions.length) {
+        imagesToUse.splice(imagesToUse.length - 1, 0, '/img_result_1.png');
+      }
     }
 
     setResultData({
@@ -401,14 +417,19 @@ export default function HomePage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     // Also persist post to Supabase
-    supabase.from('posts').insert({
-      author_name: 'criador.naverdade',
-      author_handle: '@criador',
-      caption: data.captions.join(' | '),
-      step_captions: data.captions,
-      likes_count: 0,
-      created_at: new Date().toISOString(),
-    });
+    try {
+      await supabase.from('posts').insert({
+        author_name: 'criador.naverdade',
+        author_handle: '@criador',
+        caption: data.captions.join(' | '),
+        step_captions: data.captions,
+        image_urls: imagesToUse.slice(0, data.captions.length),
+        likes_count: 0,
+        created_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Supabase post create fallback:', e);
+    }
   };
 
   // Email subscribe

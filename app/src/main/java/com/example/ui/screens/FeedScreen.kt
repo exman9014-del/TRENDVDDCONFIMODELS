@@ -44,6 +44,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -281,6 +283,7 @@ fun FeedScreen(
                 onLikeClick = { onToggleLike(post.id) },
                 onFavoriteClick = { onToggleFavorite(post.id) },
                 onCommentClick = { onOpenComments(post) },
+                onAddComment = { text -> onAddComment(post.id, text) },
                 onShareClick = {
                     val sendIntent = Intent().apply {
                         action = Intent.ACTION_SEND
@@ -440,9 +443,21 @@ fun FeedPostItem(
     onLikeClick: () -> Unit,
     onFavoriteClick: () -> Unit,
     onCommentClick: () -> Unit,
+    onAddComment: (String) -> Unit = {},
     onShareClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var isCommentsExpanded by remember { mutableStateOf(false) }
+    var commentInputText by remember { mutableStateOf("") }
+    var localComments by remember(post.id) {
+        mutableStateOf(
+            listOf(
+                Pair("pedro.builds", "Essa trend ficou muito boa kkkkkk"),
+                Pair("larissa.viaja", "Gerei o meu ontem, o resultado me chocou!")
+            )
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -612,17 +627,17 @@ fun FeedPostItem(
                     )
                 }
 
-                // Comment button
+                // Comment button - toggles embedded comments
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .clickable { onCommentClick() }
+                        .clickable { isCommentsExpanded = !isCommentsExpanded }
                         .testTag("comment_post_${post.id}")
                 ) {
                     Icon(
                         imageVector = Icons.Default.ChatBubbleOutline,
                         contentDescription = "Comentar",
-                        tint = TextSecondary,
+                        tint = if (isCommentsExpanded) PrimaryGreen else TextSecondary,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -684,18 +699,129 @@ fun FeedPostItem(
                     color = TextPrimary
                 )
             }
-            if (post.commentsCount > 0) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Ver todos os ${post.commentsCount} comentários",
-                    fontSize = 11.sp,
-                    color = TextMuted,
-                    modifier = Modifier.clickable { onCommentClick() }
-                )
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (isCommentsExpanded) "Ocultar comentários" else "Ver todos os ${post.commentsCount + localComments.size - 2} comentários",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = PrimaryGreen,
+                modifier = Modifier.clickable { isCommentsExpanded = !isCommentsExpanded }
+            )
+        }
+
+        // EMBEDDED INLINE COMMENTS SECTION (NO DETACHED MODAL)
+        if (isCommentsExpanded) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFF9FAFB))
+                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Comentários (${localComments.size})",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Fechar",
+                        fontSize = 11.sp,
+                        color = TextMuted,
+                        modifier = Modifier.clickable { isCommentsExpanded = false }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // List of inline comments
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    localComments.forEach { (author, text) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White)
+                                .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    text = author,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = text,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF374151),
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Inline comment input field
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = commentInputText,
+                        onValueChange = { commentInputText = it },
+                        placeholder = { Text("Escreva um comentário...", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryGreen,
+                            unfocusedBorderColor = CardBorder,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    IconButton(
+                        onClick = {
+                            val trimmed = commentInputText.trim()
+                            if (trimmed.isNotBlank()) {
+                                localComments = localComments + Pair("Você", trimmed)
+                                onAddComment(trimmed)
+                                commentInputText = ""
+                            }
+                        },
+                        enabled = commentInputText.isNotBlank(),
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (commentInputText.isNotBlank()) PrimaryGreen else Color(0xFFE5E7EB))
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Enviar comentário",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()

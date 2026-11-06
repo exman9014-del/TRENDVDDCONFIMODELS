@@ -127,10 +127,45 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
     },
   ]);
 
-  // Comments modal state
-  const [selectedPostForComments, setSelectedPostForComments] = useState<FeedPost | null>(null);
-  const [commentsList, setCommentsList] = useState<PostComment[]>([]);
-  const [newCommentText, setNewCommentText] = useState('');
+  // Inline comments state per post
+  const [expandedCommentsMap, setExpandedCommentsMap] = useState<Record<string, boolean>>({});
+  const [postCommentsMap, setPostCommentsMap] = useState<Record<string, PostComment[]>>({
+    p1: [
+      {
+        id: 'c1',
+        postId: 'p1',
+        authorName: 'pedro.builds',
+        content: 'Essa trend ficou muito boa kkkkkk',
+        timeAgo: '10m atrás',
+      },
+      {
+        id: 'c2',
+        postId: 'p1',
+        authorName: 'larissa.viaja',
+        content: 'Gerei o meu ontem, o resultado me chocou!',
+        timeAgo: '5m atrás',
+      },
+    ],
+    p2: [
+      {
+        id: 'c3',
+        postId: 'p2',
+        authorName: 'mari.lifestyle',
+        content: 'Sensacional esse glow up!',
+        timeAgo: '15m atrás',
+      },
+    ],
+    p3: [
+      {
+        id: 'c4',
+        postId: 'p3',
+        authorName: 'caio.explore',
+        content: 'Muito bom kkkkk',
+        timeAgo: '20m atrás',
+      },
+    ],
+  });
+  const [newCommentInputs, setNewCommentInputs] = useState<Record<string, string>>({});
   const [shareToast, setShareToast] = useState(false);
 
   const stories = [
@@ -255,84 +290,68 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
     }
   };
 
-  // 4. COMMENTS MODAL & SUPABASE PERSISTENCE
-  const openComments = async (post: FeedPost) => {
-    setSelectedPostForComments(post);
-    try {
-      const { data } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('post_id', post.id)
-        .order('created_at', { ascending: true });
+  // 4. TOGGLE INLINE COMMENTS PER POST
+  const toggleInlineComments = async (postId: string) => {
+    const nextState = !expandedCommentsMap[postId];
+    setExpandedCommentsMap((prev) => ({ ...prev, [postId]: nextState }));
 
-      if (data && data.length > 0) {
-        setCommentsList(
-          data.map((c: any) => ({
+    if (nextState) {
+      try {
+        const { data } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('post_id', postId)
+          .order('created_at', { ascending: true });
+
+        if (data && data.length > 0) {
+          const mapped: PostComment[] = data.map((c: any) => ({
             id: c.id,
             postId: c.post_id,
             authorName: c.author_name || 'Usuário',
             content: c.content,
             timeAgo: 'Recente',
-          }))
-        );
-      } else {
-        setCommentsList([
-          {
-            id: 'c1',
-            postId: post.id,
-            authorName: 'pedro.builds',
-            content: 'Essa trend ficou muito boa kkkkkk',
-            timeAgo: '10m atrás',
-          },
-          {
-            id: 'c2',
-            postId: post.id,
-            authorName: 'larissa.viaja',
-            content: 'Gerei o meu ontem, o resultado me chocou!',
-            timeAgo: '5m atrás',
-          },
-        ]);
+          }));
+          setPostCommentsMap((prev) => ({ ...prev, [postId]: mapped }));
+        }
+      } catch (e) {
+        // Use existing state
       }
-    } catch (e) {
-      setCommentsList([
-        {
-          id: 'c1',
-          postId: post.id,
-          authorName: 'pedro.builds',
-          content: 'Essa trend ficou incrível!',
-          timeAgo: '10m atrás',
-        },
-      ]);
     }
   };
 
-  const handleAddComment = async (e: React.FormEvent) => {
+  const handleAddInlineComment = async (postId: string, e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCommentText.trim() || !selectedPostForComments) return;
+    const text = (newCommentInputs[postId] || '').trim();
+    if (!text) return;
 
     const newComment: PostComment = {
       id: `c_${Date.now()}`,
-      postId: selectedPostForComments.id,
+      postId,
       authorName: 'Você',
-      content: newCommentText.trim(),
+      content: text,
       timeAgo: 'Agora',
     };
 
-    setCommentsList((prev) => [...prev, newComment]);
+    // Update comments list
+    setPostCommentsMap((prev) => ({
+      ...prev,
+      [postId]: [...(prev[postId] || []), newComment],
+    }));
+
+    // Update count in post
     setPosts((prev) =>
-      prev.map((p) =>
-        p.id === selectedPostForComments.id ? { ...p, comments: p.comments + 1 } : p
-      )
+      prev.map((p) => (p.id === postId ? { ...p, comments: p.comments + 1 } : p))
     );
 
-    const textToSave = newCommentText.trim();
-    setNewCommentText('');
+    // Reset input
+    setNewCommentInputs((prev) => ({ ...prev, [postId]: '' }));
 
+    // Sync to Supabase
     try {
       await supabase.from('comments').insert({
-        post_id: selectedPostForComments.id,
+        post_id: postId,
         author_name: 'Você',
-        content: textToSave,
+        content: text,
         created_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -403,217 +422,247 @@ export const FeedView: React.FC<FeedViewProps> = ({ onOpenBid, onCreateClick }) 
 
       {/* Feed Posts */}
       <div className="divide-y divide-gray-100">
-        {posts.map((post, idx) => (
-          <React.Fragment key={post.id}>
-            <article className="bg-white pt-4 pb-5">
-              {/* Post Header */}
-              <div className="px-4 flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <img
-                    src={post.avatar}
-                    alt={post.author}
-                    className="w-10 h-10 rounded-full object-cover border border-emerald-200"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold text-sm text-gray-900">{post.author}</span>
-                      {post.verified && (
-                        <BadgeCheck className="w-4 h-4 text-emerald-600 fill-emerald-100" />
-                      )}
+        {posts.map((post, idx) => {
+          const isCommentsOpen = !!expandedCommentsMap[post.id];
+          const postComments = postCommentsMap[post.id] || [];
+
+          return (
+            <React.Fragment key={post.id}>
+              <article className="bg-white pt-4 pb-5">
+                {/* Post Header */}
+                <div className="px-4 flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={post.avatar}
+                      alt={post.author}
+                      className="w-10 h-10 rounded-full object-cover border border-emerald-200"
+                    />
+                    <div>
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold text-sm text-gray-900">{post.author}</span>
+                        {post.verified && (
+                          <BadgeCheck className="w-4 h-4 text-emerald-600 fill-emerald-100" />
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-500">{post.location}</span>
                     </div>
-                    <span className="text-xs text-gray-500">{post.location}</span>
+                  </div>
+                  <button className="text-gray-400 hover:text-gray-600 p-1">
+                    <MoreHorizontal className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* 4-Image Grid (Na Verdade layout) */}
+                <div className="px-4 mb-3">
+                  <div className="grid grid-cols-2 gap-1.5 rounded-2xl overflow-hidden bg-gray-100 shadow-sm aspect-square">
+                    {post.images.map((imgSrc, imgIdx) => (
+                      <div key={imgIdx} className="relative group overflow-hidden bg-black/5">
+                        <img
+                          src={imgSrc}
+                          alt={`Parte ${imgIdx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                        {post.captions[imgIdx] && (
+                          <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
+                            <span className="text-white text-[11px] font-bold drop-shadow leading-tight line-clamp-2">
+                              {post.captions[imgIdx]}
+                            </span>
+                          </div>
+                        )}
+                        <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center">
+                          {imgIdx + 1}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <button className="text-gray-400 hover:text-gray-600 p-1">
-                  <MoreHorizontal className="w-5 h-5" />
-                </button>
-              </div>
 
-              {/* 4-Image Grid (Na Verdade layout) */}
-              <div className="px-4 mb-3">
-                <div className="grid grid-cols-2 gap-1.5 rounded-2xl overflow-hidden bg-gray-100 shadow-sm aspect-square">
-                  {post.images.map((imgSrc, imgIdx) => (
-                    <div key={imgIdx} className="relative group overflow-hidden bg-black/5">
-                      <img
-                        src={imgSrc}
-                        alt={`Parte ${imgIdx + 1}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                {/* Actions Row */}
+                <div className="px-4 flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => handleLike(post.id)}
+                      className="flex items-center gap-1 text-gray-700 hover:text-red-500 transition"
+                      aria-label="Curtir post"
+                    >
+                      <Heart
+                        className={`w-6 h-6 ${
+                          post.isLiked ? 'fill-red-500 text-red-500' : 'text-gray-700'
+                        }`}
                       />
-                      {post.captions[imgIdx] && (
-                        <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
-                          <span className="text-white text-[11px] font-bold drop-shadow leading-tight line-clamp-2">
-                            {post.captions[imgIdx]}
-                          </span>
-                        </div>
-                      )}
-                      <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center">
-                        {imgIdx + 1}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Actions Row */}
-              <div className="px-4 flex items-center justify-between mb-2">
-                <div className="flex items-center gap-4">
+                    </button>
+                    <button
+                      onClick={() => toggleInlineComments(post.id)}
+                      className="flex items-center gap-1 text-gray-700 hover:text-emerald-600 transition"
+                      aria-label="Abrir comentários embutidos"
+                    >
+                      <MessageCircle
+                        className={`w-6 h-6 ${
+                          isCommentsOpen ? 'text-emerald-600 fill-emerald-50' : 'text-gray-700'
+                        }`}
+                      />
+                    </button>
+                    <button
+                      onClick={() => handleShare(post)}
+                      className="text-gray-700 hover:text-emerald-600 transition"
+                      aria-label="Compartilhar post"
+                    >
+                      <Share2 className="w-6 h-6" />
+                    </button>
+                  </div>
                   <button
-                    onClick={() => handleLike(post.id)}
-                    className="flex items-center gap-1 text-gray-700 hover:text-red-500 transition"
+                    onClick={() => handleFavorite(post.id)}
+                    className="text-gray-700 hover:text-emerald-600 transition"
+                    aria-label="Salvar post"
                   >
-                    <Heart
+                    <Bookmark
                       className={`w-6 h-6 ${
-                        post.isLiked ? 'fill-red-500 text-red-500' : 'text-gray-700'
+                        post.isFavorited ? 'fill-[#00A86B] text-[#00A86B]' : 'text-gray-700'
                       }`}
                     />
                   </button>
-                  <button
-                    onClick={() => openComments(post)}
-                    className="flex items-center gap-1 text-gray-700 hover:text-emerald-600 transition"
-                  >
-                    <MessageCircle className="w-6 h-6" />
-                  </button>
-                  <button
-                    onClick={() => handleShare(post)}
-                    className="text-gray-700 hover:text-emerald-600 transition"
-                  >
-                    <Share2 className="w-6 h-6" />
-                  </button>
                 </div>
-                <button
-                  onClick={() => handleFavorite(post.id)}
-                  className="text-gray-700 hover:text-emerald-600 transition"
-                >
-                  <Bookmark
-                    className={`w-6 h-6 ${
-                      post.isFavorited ? 'fill-[#00A86B] text-[#00A86B]' : 'text-gray-700'
-                    }`}
-                  />
-                </button>
-              </div>
 
-              {/* Likes & Caption */}
-              <div className="px-4 space-y-1">
-                <p className="text-xs font-semibold text-gray-900">
-                  Curtido por <span className="font-bold">pedro.builds</span> e outras{' '}
-                  <span className="font-bold">{post.likes.toLocaleString()} pessoas</span>
-                </p>
-                <p className="text-sm text-gray-800 leading-snug">
-                  <span className="font-bold mr-1.5">{post.author}</span>
-                  {post.description}
-                </p>
-                <div className="flex items-center gap-2 pt-1 text-xs text-gray-400">
-                  <button
-                    onClick={() => openComments(post)}
-                    className="hover:text-gray-600 transition"
-                  >
-                    Ver todos os {post.comments} comentários
-                  </button>
-                  <span>•</span>
-                  <span>{post.timeAgo}</span>
-                </div>
-              </div>
-            </article>
-
-            {/* Interspersed Auction Banner */}
-            {idx === 0 && (
-              <div className="p-4 bg-gray-50">
-                <div className="rounded-2xl p-4 bg-gradient-to-r from-gray-950 via-purple-950 to-gray-900 text-white shadow-md border border-purple-800/40">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300">
-                        <Megaphone className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-white leading-tight">
-                          Alugue este espaço no feed
-                        </h4>
-                        <span className="text-[11px] text-purple-300 font-medium">
-                          — Leilão ao vivo
-                        </span>
-                      </div>
-                    </div>
-                    <span className="bg-red-600/90 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                      AO VIVO
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-gray-300 mb-3 leading-relaxed">
-                    Seu anúncio ou post exibido entre as publicações para milhares de criadores em tempo real.
+                {/* Likes & Caption */}
+                <div className="px-4 space-y-1">
+                  <p className="text-xs font-semibold text-gray-900">
+                    Curtido por <span className="font-bold">pedro.builds</span> e outras{' '}
+                    <span className="font-bold">{post.likes.toLocaleString()} pessoas</span>
                   </p>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    <div>
-                      <div className="text-[10px] text-gray-400 uppercase font-semibold">Lance atual</div>
-                      <div className="text-base font-black text-emerald-400">R$ 32,00</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[10px] text-gray-400 uppercase font-semibold">Tempo restante</div>
-                      <div className="text-xs font-mono font-bold text-purple-200">04:27</div>
-                    </div>
+                  <p className="text-sm text-gray-800 leading-snug">
+                    <span className="font-bold mr-1.5">{post.author}</span>
+                    {post.description}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1 text-xs text-gray-400">
                     <button
-                      onClick={() => onOpenBid('banner_feed')}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5"
+                      onClick={() => toggleInlineComments(post.id)}
+                      className="text-emerald-700 font-medium hover:text-emerald-900 transition"
                     >
-                      <Gavel className="w-3.5 h-3.5" />
-                      <span>Dar Lance</span>
+                      {isCommentsOpen
+                        ? 'Ocultar comentários'
+                        : `Ver todos os ${post.comments} comentários`}
                     </button>
+                    <span>•</span>
+                    <span>{post.timeAgo}</span>
                   </div>
                 </div>
-              </div>
-            )}
-          </React.Fragment>
-        ))}
+
+                {/* INLINE EMBEDDED COMMENTS SECTION INSIDE POST (NOT FLOATING) */}
+                {isCommentsOpen && (
+                  <div className="mt-3 mx-4 p-3.5 bg-gray-50/80 rounded-2xl border border-gray-100 space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold text-gray-800 border-b border-gray-200/60 pb-2">
+                      <span className="flex items-center gap-1.5">
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        Comentários ({postComments.length})
+                      </span>
+                      <button
+                        onClick={() => toggleInlineComments(post.id)}
+                        className="text-[11px] text-gray-400 hover:text-gray-600 font-normal"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+
+                    {/* Comments list */}
+                    <div className="space-y-2.5 max-h-48 overflow-y-auto no-scrollbar pr-1">
+                      {postComments.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">
+                          Seja o primeiro a comentar nesta trend!
+                        </p>
+                      ) : (
+                        postComments.map((comm) => (
+                          <div key={comm.id} className="text-xs bg-white p-2 rounded-xl border border-gray-100 shadow-2xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-gray-900">{comm.authorName}</span>
+                              <span className="text-[10px] text-gray-400">{comm.timeAgo}</span>
+                            </div>
+                            <p className="text-gray-700 mt-1 leading-relaxed">{comm.content}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Inline comment form */}
+                    <form
+                      onSubmit={(e) => handleAddInlineComment(post.id, e)}
+                      className="flex gap-2 pt-1"
+                    >
+                      <input
+                        type="text"
+                        placeholder="Escreva um comentário nesta publicação..."
+                        value={newCommentInputs[post.id] || ''}
+                        onChange={(e) =>
+                          setNewCommentInputs((prev) => ({
+                            ...prev,
+                            [post.id]: e.target.value,
+                          }))
+                        }
+                        className="flex-1 py-2 px-3 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-600 transition"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!(newCommentInputs[post.id] || '').trim()}
+                        className="w-9 h-9 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl flex items-center justify-center flex-shrink-0 transition shadow-2xs"
+                        aria-label="Enviar comentário"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </article>
+
+              {/* Interspersed Auction Banner */}
+              {idx === 0 && (
+                <div className="p-4 bg-gray-50">
+                  <div className="rounded-2xl p-4 bg-gradient-to-r from-gray-950 via-purple-950 to-gray-900 text-white shadow-md border border-purple-800/40">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300">
+                          <Megaphone className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-white leading-tight">
+                            Alugue este espaço no feed
+                          </h4>
+                          <span className="text-[11px] text-purple-300 font-medium">
+                            — Leilão ao vivo
+                          </span>
+                        </div>
+                      </div>
+                      <span className="bg-red-600/90 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                        AO VIVO
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-300 mb-3 leading-relaxed">
+                      Seu anúncio ou post exibido entre as publicações para milhares de criadores em tempo real.
+                    </p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                      <div>
+                        <div className="text-[10px] text-gray-400 uppercase font-semibold">Lance atual</div>
+                        <div className="text-base font-black text-emerald-400">R$ 32,00</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[10px] text-gray-400 uppercase font-semibold">Tempo restante</div>
+                        <div className="text-xs font-mono font-bold text-purple-200">04:27</div>
+                      </div>
+                      <button
+                        onClick={() => onOpenBid('banner_feed')}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5"
+                      >
+                        <Gavel className="w-3.5 h-3.5" />
+                        <span>Dar Lance</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
-
-      {/* COMMENTS MODAL */}
-      {selectedPostForComments && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h3 className="font-bold text-sm text-gray-900">
-                Comentários ({commentsList.length})
-              </h3>
-              <button
-                onClick={() => setSelectedPostForComments(null)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* List */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-3">
-              {commentsList.map((comm) => (
-                <div key={comm.id} className="text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-900">{comm.authorName}</span>
-                    <span className="text-[10px] text-gray-400">{comm.timeAgo}</span>
-                  </div>
-                  <p className="text-gray-700 mt-0.5">{comm.content}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleAddComment} className="pt-2 border-t border-gray-100 flex gap-2">
-              <input
-                type="text"
-                placeholder="Adicione um comentário..."
-                value={newCommentText}
-                onChange={(e) => setNewCommentText(e.target.value)}
-                className="flex-1 py-2 px-3 text-xs border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-600"
-              />
-              <button
-                type="submit"
-                className="w-9 h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center flex-shrink-0 transition"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Share Toast */}
       {shareToast && (

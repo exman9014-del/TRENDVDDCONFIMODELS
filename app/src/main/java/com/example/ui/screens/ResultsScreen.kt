@@ -53,7 +53,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import com.example.util.ImageDownloadHelper
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,7 +95,9 @@ fun ResultsScreen(
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var copiedFeedback by remember { mutableStateOf(false) }
+    var isDownloadingAll by remember { mutableStateOf(false) }
     var downloadFeedback by remember { mutableStateOf(false) }
     var emailInput by remember { mutableStateOf(state.autoPostEmail) }
     var selectedAuctionForBid by remember { mutableStateOf<AuctionItem?>(null) }
@@ -165,14 +170,14 @@ fun ResultsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Suas 4 imagens geradas",
+                    text = "Suas ${images.size} imagens geradas",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Deslize para ver todas",
+                    text = "Deslize para ver todas e baixe para sua galeria",
                     fontSize = 13.sp,
                     color = TextSecondary
                 )
@@ -180,7 +185,7 @@ fun ResultsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. CARROSSEL DAS 4 IMAGENS GERADAS COM LEGENDAS
+            // 1. CARROSSEL DAS IMAGENS GERADAS COM LEGENDAS
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -190,6 +195,9 @@ fun ResultsScreen(
             ) {
                 itemsIndexed(images) { index, imgRes ->
                     val caption = captions.getOrElse(index) { "desculpa kkkkk" }
+                    val isLastPhoto = index == images.size - 1
+                    val hasUserUploadedPhoto = !state.uploadedPhotoUrl.isNullOrBlank() || !state.uploadedPhotoUri.isNullOrBlank()
+
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F4F6)),
@@ -216,20 +224,65 @@ fun ResultsScreen(
                                 )
                             }
 
-                            // Step badge on top
+                            // Step badge on top-left
                             Box(
                                 modifier = Modifier
                                     .padding(8.dp)
                                     .align(Alignment.TopStart)
                                     .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .background(Color.Black.copy(alpha = 0.65f))
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = "${index + 1}/4",
+                                    text = "${index + 1}/${images.size}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
+                                )
+                            }
+
+                            // User photo badge if last photo
+                            if (isLastPhoto && hasUserUploadedPhoto) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .align(Alignment.TopCenter)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(PrimaryGreen)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "SUA FOTO",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            // Single image download button (top-right)
+                            IconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        ImageDownloadHelper.saveImagesToGallery(
+                                            context = context,
+                                            drawableResList = listOf(imgRes),
+                                            imageUrls = listOfNotNull(remoteUrl)
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .padding(6.dp)
+                                    .size(32.dp)
+                                    .align(Alignment.TopEnd)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Baixar esta imagem",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
@@ -462,7 +515,19 @@ fun ResultsScreen(
 
             // 5. BOTÕES: BAIXAR IMAGENS E POSTAR NO FEED
             OutlinedButton(
-                onClick = { downloadFeedback = true },
+                onClick = {
+                    coroutineScope.launch {
+                        isDownloadingAll = true
+                        val count = ImageDownloadHelper.saveImagesToGallery(
+                            context = context,
+                            drawableResList = images,
+                            imageUrls = result?.imageUrls.orEmpty()
+                        )
+                        isDownloadingAll = false
+                        if (count > 0) downloadFeedback = true
+                    }
+                },
+                enabled = !isDownloadingAll,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                 border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
@@ -474,11 +539,14 @@ fun ResultsScreen(
                 Icon(
                     imageVector = Icons.Default.Download,
                     contentDescription = null,
+                    tint = PrimaryGreen,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (downloadFeedback) "Imagens Salvas na Galeria! ✓" else "Baixar Imagens",
+                    text = if (isDownloadingAll) "Salvando na Galeria..."
+                    else if (downloadFeedback) "✓ ${images.size} Imagens Salvas na Galeria!"
+                    else "Baixar Todas (${images.size} Imagens)",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
