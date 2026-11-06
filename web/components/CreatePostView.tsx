@@ -39,7 +39,7 @@ interface CreatePostViewProps {
     postType: 'UGLY_TO_BEAUTIFUL' | 'BEAUTIFUL_TO_UGLY';
     captions: string[];
     userPhotoUrl?: string;
-  }) => void;
+  }, onProgress: (completed: number, total: number) => void) => Promise<void>;
   onOpenBid: (auctionId: string) => void;
   onOpenAddTrait: () => void;
   imageTraitsMap: Record<number, Trait[]>;
@@ -87,6 +87,8 @@ export default function CreatePostView({
 
   const [isAiGeneratingCaptions, setIsAiGeneratingCaptions] = useState(false);
   const [isGeneratingPost, setIsGeneratingPost] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const [generationProgress, setGenerationProgress] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // The user photo slot is ALWAYS the last container
@@ -114,7 +116,7 @@ export default function CreatePostView({
   ];
 
   const getContainerPhoto = (idx: number) => {
-    if (idx === userPhotoIndex && userPhoto) {
+    if (userPhoto) {
       return userPhoto;
     }
     return defaultPhotos[idx % defaultPhotos.length];
@@ -122,10 +124,29 @@ export default function CreatePostView({
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      onUploadUserPhoto(url);
+    e.target.value = '';
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setGenerationError('Envie uma imagem JPEG, PNG ou WebP.');
+      return;
     }
+    if (file.size > 3 * 1024 * 1024) {
+      setGenerationError('A foto deve ter no máximo 3 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onUploadUserPhoto(reader.result);
+        setGenerationError('');
+      } else {
+        setGenerationError('Não foi possível ler a foto. Tente outro arquivo.');
+      }
+    };
+    reader.onerror = () => setGenerationError('Não foi possível ler a foto. Tente novamente.');
+    reader.readAsDataURL(file);
   };
 
   const handleCaptionChange = (index: number, val: string) => {
@@ -167,16 +188,30 @@ export default function CreatePostView({
     }, 600);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    setGenerationError('');
+    if (!userPhoto) {
+      setGenerationError('Envie sua foto para gerar versões com IA.');
+      return;
+    }
+
     setIsGeneratingPost(true);
-    setTimeout(() => {
-      onGenerate({
+    setGenerationProgress('Enviando foto para o servidor de geração...');
+    try {
+      await onGenerate({
         postType,
         captions: captions.slice(0, containersCount),
         userPhotoUrl: userPhoto || undefined,
+      }, (completed, total) => {
+        setGenerationProgress(`Servidor concluiu ${completed} de ${total} imagens.`);
       });
+    } catch (error) {
+      setGenerationError(
+        error instanceof Error ? error.message : 'Não foi possível gerar as imagens.'
+      );
+    } finally {
       setIsGeneratingPost(false);
-    }, 1200);
+    }
   };
 
   const currentTraits = imageTraitsMap[selectedThumb] || [];
@@ -286,13 +321,18 @@ export default function CreatePostView({
           className="w-full h-full object-cover"
         />
 
-        {/* Highlight if waiting for user photo upload in the last container */}
-        {isSelectedUserPhoto && (
+        {/* The uploaded photo is the source image for all generated containers. */}
+        {userPhoto ? (
+          <div className="absolute top-3 left-3 bg-[#00A86B] text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-full shadow-md flex items-center gap-1">
+            <Camera className="w-3 h-3" />
+            <span>Foto-base para geração</span>
+          </div>
+        ) : isSelectedUserPhoto ? (
           <div className="absolute top-3 left-3 bg-[#00A86B] text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-full shadow-md flex items-center gap-1">
             <Camera className="w-3 h-3" />
             <span>Sua Foto (Último Container)</span>
           </div>
-        )}
+        ) : null}
 
         {/* Upload Button */}
         <div className="absolute top-3 right-3 flex gap-2">
@@ -308,7 +348,7 @@ export default function CreatePostView({
             className="bg-black/60 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 hover:bg-black/80 transition"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>{userPhoto && isSelectedUserPhoto ? 'Trocar Foto' : 'Sua Foto'}</span>
+            <span>{userPhoto ? 'Trocar Foto' : 'Sua Foto'}</span>
           </button>
         </div>
 
@@ -575,21 +615,38 @@ export default function CreatePostView({
       {/* 8. BOTÃO FINAL GERAR COM IA */}
       <button
         onClick={handleSubmit}
-        disabled={isGeneratingPost}
+        disabled={isGeneratingPost || !userPhoto}
         className="w-full py-3.5 bg-[#00A86B] hover:bg-[#046A4E] text-white font-extrabold text-sm rounded-2xl shadow-md flex items-center justify-center gap-2 transition active:scale-98 disabled:opacity-50"
       >
         {isGeneratingPost ? (
           <>
             <RefreshCw className="w-4 h-4 animate-spin" />
-            <span>Processando {containersCount} imagens com IA...</span>
+            <span>Gerando com Fooocus...</span>
           </>
         ) : (
           <>
             <Sparkles className="w-4 h-4" />
-            <span>Gerar com IA ({containersCount} Imagens)</span>
+            <span>Gerar com Fooocus ({containersCount} imagens)</span>
           </>
         )}
       </button>
+      {generationProgress && isGeneratingPost ? (
+        <p role="status" aria-live="polite" className="text-center text-xs text-emerald-700">
+          {generationProgress}
+        </p>
+      ) : null}
+      {generationError ? (
+        <p role="alert" className="text-sm text-red-600">
+          {generationError}
+        </p>
+      ) : !userPhoto ? (
+        <p className="text-center text-xs text-gray-500">
+          Envie sua foto para gerar versões personalizadas com IA.
+        </p>
+      ) : null}
+      <p className="text-center text-[11px] text-gray-400">
+        Ao gerar, sua foto será enviada ao servidor Fooocus configurado. A última imagem permanece original.
+      </p>
 
       {/* MODAL "VER TODAS AS SUGESTÕES" */}
       {showAllSuggestions && (

@@ -15,6 +15,7 @@ Versão web completa do aplicativo **Na Verdade** com design mobile-first e resp
 2. **Criar Post**:
    - Alternância de fluxo: **Feio → Bonito** (verde) e **Bonito → Feio** (vermelho).
    - Upload de foto com visualizador principal e 4 miniaturas em grade.
+   - Geração real de versões da foto pelo Fooocus-API; a última imagem permanece original.
    - Seletor de traços de beleza (+ verde) e feiura (+ vermelho) com toggle instantâneo.
    - Adição de traços personalizados.
    - 4 campos de legenda com botão de auto-geração por IA.
@@ -61,6 +62,23 @@ Versão web completa do aplicativo **Na Verdade** com design mobile-first e resp
 ---
 
 ## ⚡ Como Rodar Localmente
+
+Configure `FOOOCUS_API_URL` e `FOOOCUS_API_KEY` no ambiente do servidor para habilitar a geração. A API deve estar acessível por HTTPS e protegida com chave. Localmente, adicione as variáveis a `web/.env.local`; na Vercel, cadastre-as em **Settings → Environment Variables** e faça um novo deploy. Nunca use o prefixo `NEXT_PUBLIC_` nessas variáveis: a URL e a chave são usadas somente pela rota de servidor. Fotos JPEG, PNG ou WebP de até 3 MB são aceitas.
+
+### Servidor Fooocus no RunPod
+
+Use um **GPU Pod** (não Serverless), com Docker e uma GPU compatível. Exponha a porta TCP `8888` no Pod e inicie a imagem oficial do Fooocus-API escutando em todas as interfaces e com autenticação habilitada:
+
+```bash
+docker run -d --gpus=all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+  -e NVIDIA_VISIBLE_DEVICES=all \
+  -p 8888:8888 \
+  konieshadow/fooocus-api \
+  --host 0.0.0.0 --apikey "SUA_CHAVE_FORTE"
+```
+
+Use a URL HTTPS pública do serviço Fooocus no RunPod como `FOOOCUS_API_URL` (sem caminho de endpoint) e a mesma chave configurada em `--apikey` como `FOOOCUS_API_KEY`. O backend envia a chave no cabeçalho `X-API-KEY`; não exponha esses valores no navegador. Mantenha o Pod ativo enquanto o app precisar gerar imagens. O custo da GPU e da execução do Pod depende do plano e do tempo ligado; confira os valores do RunPod antes de iniciar.
 
 ```bash
 cd web

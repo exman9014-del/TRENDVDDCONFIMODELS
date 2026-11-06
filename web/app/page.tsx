@@ -12,7 +12,6 @@ import { ProfileView } from '../components/ProfileView';
 import BidModal from '../components/BidModal';
 import AddTraitModal from '../components/AddTraitModal';
 import { supabase } from '../lib/supabase';
-import { generateTrendImagesFromUserPhoto } from '../lib/imageGenerator';
 
 interface AuctionData {
   id: string;
@@ -162,21 +161,13 @@ export default function HomePage() {
   const [resultData, setResultData] = useState<{
     images: string[];
     captions: string[];
+    sources: Array<'fooocus' | 'original'>;
     tiktokTitle: string;
   }>({
-    images: [
-      '/img_result_1.png',
-      '/img_result_2.png',
-      '/img_result_3.png',
-      '/img_result_4.png',
-    ],
-    captions: [
-      'nem é magra',
-      'na verdade eu não era loiro',
-      'desculpa kkkk',
-      'desculpa kkkk',
-    ],
-    tiktokTitle: 'POV: Você caiu na trend do "Na Verdade" 😂 #naverdade #trend #glowup',
+    images: [],
+    captions: [],
+    sources: [],
+    tiktokTitle: '',
   });
 
   // Fetch remote suggestions from Supabase
@@ -378,35 +369,43 @@ export default function HomePage() {
     postType: 'UGLY_TO_BEAUTIFUL' | 'BEAUTIFUL_TO_UGLY';
     captions: string[];
     userPhotoUrl?: string;
-  }) => {
-    let imagesToUse: string[] = [];
-
-    if (data.userPhotoUrl) {
-      // User uploaded their photo:
-      // Generate container 0, 1, 2... based on user photo with their specific active traits!
-      // Container 3 (the 4th/last container) is ALWAYS the exact user photo untouched!
-      imagesToUse = await generateTrendImagesFromUserPhoto(
-        data.userPhotoUrl,
-        containersCount,
-        imageTraitsMap,
-        data.postType
-      );
-    } else {
-      // Default curated sequence with the 4th container as the natural portrait
-      imagesToUse = [
-        '/img_result_1.png',
-        '/img_result_2.png',
-        '/img_result_3.png',
-        '/img_creator_main.png',
-      ];
-      while (imagesToUse.length < data.captions.length) {
-        imagesToUse.splice(imagesToUse.length - 1, 0, '/img_result_1.png');
-      }
+  }, onProgress: (completed: number, total: number) => void) => {
+    if (!data.userPhotoUrl) {
+      throw new Error('Envie sua foto para gerar versões com IA.');
     }
+
+    const imagesToUse: string[] = [];
+    for (let index = 0; index < containersCount - 1; index++) {
+      const activeTraits = (imageTraitsMap[index] || [])
+        .filter((trait) => trait.enabled)
+        .map((trait) => trait.name);
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: data.userPhotoUrl,
+          postType: data.postType,
+          traits: activeTraits,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Não foi possível gerar as imagens.');
+      }
+      if (typeof result.image !== 'string' || !/^data:image\/(?:jpeg|png|webp);base64,/.test(result.image)) {
+        throw new Error(`O Fooocus não retornou uma imagem válida para a foto ${index + 1}.`);
+      }
+      imagesToUse.push(result.image);
+      onProgress(imagesToUse.length, containersCount - 1);
+    }
+    imagesToUse.push(data.userPhotoUrl);
 
     setResultData({
       images: imagesToUse.slice(0, data.captions.length),
       captions: data.captions,
+      sources: imagesToUse.map((_, index) =>
+        index === containersCount - 1 ? 'original' : 'fooocus'
+      ),
       tiktokTitle:
         data.postType === 'UGLY_TO_BEAUTIFUL'
           ? 'POV: O glow up da trend "Na Verdade" chocou todo mundo 😱 #naverdade #glowup'

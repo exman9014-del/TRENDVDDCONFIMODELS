@@ -10,6 +10,7 @@ interface ResultsViewProps {
   resultData: {
     images: string[];
     captions: string[];
+    sources: Array<'fooocus' | 'original'>;
     tiktokTitle: string;
   };
 }
@@ -104,8 +105,12 @@ export default function ResultsView({
       </div>
 
       <div className="text-center space-y-1">
-        <h1 className="text-lg font-black text-gray-900">Suas {resultData.images.length} imagens geradas</h1>
-        <p className="text-xs text-gray-500">Deslize para ver todas e baixe para a sua galeria</p>
+        <h1 className="text-lg font-black text-gray-900">
+          {resultData.sources.filter((source) => source === 'fooocus').length} imagens geradas pelo Fooocus
+        </h1>
+        <p className="text-xs text-gray-500">
+          A última é sua foto original. Deslize para ver e baixar.
+        </p>
       </div>
 
       {/* 1. CARROSSEL DAS IMAGENS GERADAS COM LEGENDAS */}
@@ -122,6 +127,13 @@ export default function ResultsView({
             />
             <span className="absolute top-2 left-2 bg-black/60 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
               {idx + 1}/{resultData.images.length}
+            </span>
+            <span
+              className={`absolute top-9 left-2 text-white font-bold text-[9px] px-2 py-1 rounded-full ${
+                resultData.sources[idx] === 'original' ? 'bg-gray-700/80' : 'bg-emerald-700/90'
+              }`}
+            >
+              {resultData.sources[idx] === 'original' ? 'Foto original' : 'Gerada pelo Fooocus'}
             </span>
 
             {/* Single image download button */}
