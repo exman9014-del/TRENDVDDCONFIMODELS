@@ -71,6 +71,8 @@ Ambos são **completamente preservados**. Você pode usar um, outro, ou migrar e
 
 Use [`web/.env.example`](.env.example) como referência e copie-o para `web/.env.local` no desenvolvimento local. Esse arquivo de exemplo contém somente nomes de variáveis e valores fictícios; não copie credenciais reais para ele. O `.env.local` fica excluído do Git. Na Vercel, configure as variáveis necessárias em **Settings → Environment Variables**.
 
+Para entender a diferença entre URLs, chaves do app e tokens administrativos de Runpod/Vercel/GitHub, consulte o [guia de credenciais e variáveis](../CREDENCIAIS_E_VARIAVEIS.md).
+
 #### Usando ComfyUI (padrão)
 Configure `IMAGE_GENERATION_BACKEND=comfyui` e `COMFYUI_API_URL` no ambiente do servidor. O workflow precisa ser exportado no formato API e configurado como `COMFYUI_WORKFLOW_JSON` ou no arquivo `web/config/comfyui-workflow-api.json`. O formato, os marcadores obrigatórios e os passos que faltam para validar com o Pod real estão em [COMFYUI_INTEGRATION.md](../COMFYUI_INTEGRATION.md). Opcionalmente, `COMFYUI_API_KEY` é enviado como `Authorization: Bearer` para um gateway que aceite esse esquema; o ComfyUI padrão não habilita essa autenticação sozinho.
 
