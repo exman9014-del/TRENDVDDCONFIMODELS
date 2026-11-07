@@ -10,7 +10,7 @@ interface ResultsViewProps {
   resultData: {
     images: string[];
     captions: string[];
-    sources: Array<'fooocus' | 'original'>;
+    sources: Array<'fooocus' | 'comfyui' | 'original'>;
     tiktokTitle: string;
   };
 }
@@ -26,6 +26,10 @@ export default function ResultsView({
   const [emailSaved, setEmailSaved] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSaved, setDownloadSaved] = useState(false);
+  const generatedSources = resultData.sources.filter((source) => source !== 'original');
+  const generatedBackend = generatedSources[0];
+  const generatedLabel =
+    generatedBackend === 'comfyui' ? 'ComfyUI' : generatedBackend === 'fooocus' ? 'Fooocus' : 'IA';
 
   const handleCopyTitle = () => {
     navigator.clipboard.writeText(resultData.tiktokTitle);
@@ -106,7 +110,7 @@ export default function ResultsView({
 
       <div className="text-center space-y-1">
         <h1 className="text-lg font-black text-gray-900">
-          {resultData.sources.filter((source) => source === 'fooocus').length} imagens geradas pelo Fooocus
+          {generatedSources.length} imagens geradas por {generatedLabel}
         </h1>
         <p className="text-xs text-gray-500">
           A última é sua foto original. Deslize para ver e baixar.
@@ -133,7 +137,9 @@ export default function ResultsView({
                 resultData.sources[idx] === 'original' ? 'bg-gray-700/80' : 'bg-emerald-700/90'
               }`}
             >
-              {resultData.sources[idx] === 'original' ? 'Foto original' : 'Gerada pelo Fooocus'}
+              {resultData.sources[idx] === 'original'
+                ? 'Foto original'
+                : `Gerada pelo ${resultData.sources[idx] === 'comfyui' ? 'ComfyUI' : 'Fooocus'}`}
             </span>
 
             {/* Single image download button */}

@@ -161,7 +161,7 @@ export default function HomePage() {
   const [resultData, setResultData] = useState<{
     images: string[];
     captions: string[];
-    sources: Array<'fooocus' | 'original'>;
+    sources: Array<'fooocus' | 'comfyui' | 'original'>;
     tiktokTitle: string;
   }>({
     images: [],
@@ -375,6 +375,8 @@ export default function HomePage() {
     }
 
     const imagesToUse: string[] = [];
+    let generatedBackend: 'fooocus' | 'comfyui' | null = null;
+    
     for (let index = 0; index < containersCount - 1; index++) {
       const activeTraits = (imageTraitsMap[index] || [])
         .filter((trait) => trait.enabled)
@@ -388,23 +390,38 @@ export default function HomePage() {
           traits: activeTraits,
         }),
       });
-      const result = await response.json();
+      const result: { image?: unknown; error?: unknown; backend?: unknown } = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || 'Não foi possível gerar as imagens.');
+        throw new Error(
+          typeof result.error === 'string'
+            ? result.error
+            : 'Não foi possível gerar as imagens.'
+        );
       }
       if (typeof result.image !== 'string' || !/^data:image\/(?:jpeg|png|webp);base64,/.test(result.image)) {
-        throw new Error(`O Fooocus não retornou uma imagem válida para a foto ${index + 1}.`);
+        throw new Error(`O serviço não retornou uma imagem válida para a foto ${index + 1}.`);
       }
+      if (result.backend !== 'fooocus' && result.backend !== 'comfyui') {
+        throw new Error('O servidor não identificou qual serviço gerou a imagem.');
+      }
+      if (generatedBackend && generatedBackend !== result.backend) {
+        throw new Error('O backend de geração mudou durante o processamento.');
+      }
+      generatedBackend = result.backend;
       imagesToUse.push(result.image);
       onProgress(imagesToUse.length, containersCount - 1);
     }
     imagesToUse.push(data.userPhotoUrl);
+    if (!generatedBackend) {
+      throw new Error('Nenhum backend de geração produziu imagens.');
+    }
+    const finalGeneratedBackend = generatedBackend;
 
     setResultData({
       images: imagesToUse.slice(0, data.captions.length),
       captions: data.captions,
       sources: imagesToUse.map((_, index) =>
-        index === containersCount - 1 ? 'original' : 'fooocus'
+        index === containersCount - 1 ? 'original' : finalGeneratedBackend
       ),
       tiktokTitle:
         data.postType === 'UGLY_TO_BEAUTIFUL'

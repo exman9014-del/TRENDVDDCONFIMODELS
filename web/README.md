@@ -15,7 +15,7 @@ Versão web completa do aplicativo **Na Verdade** com design mobile-first e resp
 2. **Criar Post**:
    - Alternância de fluxo: **Feio → Bonito** (verde) e **Bonito → Feio** (vermelho).
    - Upload de foto com visualizador principal e 4 miniaturas em grade.
-   - Geração real de versões da foto pelo Fooocus-API; a última imagem permanece original.
+   - Geração de versões da foto pelo backend configurado (ComfyUI ou Fooocus); a última imagem permanece original.
    - Seletor de traços de beleza (+ verde) e feiura (+ vermelho) com toggle instantâneo.
    - Adição de traços personalizados.
    - 4 campos de legenda com botão de auto-geração por IA.
@@ -63,7 +63,21 @@ Versão web completa do aplicativo **Na Verdade** com design mobile-first e resp
 
 ## ⚡ Como Rodar Localmente
 
+### Configuração de Backend de Geração
+
+O projeto suporta **dois backends** para geração de imagens. A rota do servidor escolhe o backend por `IMAGE_GENERATION_BACKEND` (`comfyui` ou `fooocus`); o padrão é `comfyui`.
+
+Ambos são **completamente preservados**. Você pode usar um, outro, ou migrar entre eles conforme necessário.
+
+Use [`web/.env.example`](.env.example) como referência e copie-o para `web/.env.local` no desenvolvimento local. Esse arquivo de exemplo contém somente nomes de variáveis e valores fictícios; não copie credenciais reais para ele. O `.env.local` fica excluído do Git. Na Vercel, configure as variáveis necessárias em **Settings → Environment Variables**.
+
+#### Usando ComfyUI (padrão)
+Configure `IMAGE_GENERATION_BACKEND=comfyui` e `COMFYUI_API_URL` no ambiente do servidor. O workflow precisa ser exportado no formato API e configurado como `COMFYUI_WORKFLOW_JSON` ou no arquivo `web/config/comfyui-workflow-api.json`. O formato, os marcadores obrigatórios e os passos que faltam para validar com o Pod real estão em [COMFYUI_INTEGRATION.md](../COMFYUI_INTEGRATION.md). Opcionalmente, `COMFYUI_API_KEY` é enviado como `Authorization: Bearer` para um gateway que aceite esse esquema; o ComfyUI padrão não habilita essa autenticação sozinho.
+
+#### Usando Fooocus
 Configure `FOOOCUS_API_URL` e `FOOOCUS_API_KEY` no ambiente do servidor para habilitar a geração. A API deve estar acessível por HTTPS e protegida com chave. Localmente, adicione as variáveis a `web/.env.local`; na Vercel, cadastre-as em **Settings → Environment Variables** e faça um novo deploy. Nunca use o prefixo `NEXT_PUBLIC_` nessas variáveis: a URL e a chave são usadas somente pela rota de servidor. Fotos JPEG, PNG ou WebP de até 3 MB são aceitas.
+
+Para manter Fooocus como backend ativo, configure `IMAGE_GENERATION_BACKEND=fooocus`. A rota direta `/api/generate-image-fooocus` também continua disponível.
 
 ### Servidor Fooocus no RunPod
 

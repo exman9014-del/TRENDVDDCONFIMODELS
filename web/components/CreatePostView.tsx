@@ -621,12 +621,12 @@ export default function CreatePostView({
         {isGeneratingPost ? (
           <>
             <RefreshCw className="w-4 h-4 animate-spin" />
-            <span>Gerando com Fooocus...</span>
+            <span>Gerando com IA...</span>
           </>
         ) : (
           <>
             <Sparkles className="w-4 h-4" />
-            <span>Gerar com Fooocus ({containersCount} imagens)</span>
+            <span>Gerar com IA ({containersCount} imagens)</span>
           </>
         )}
       </button>
@@ -645,7 +645,7 @@ export default function CreatePostView({
         </p>
       ) : null}
       <p className="text-center text-[11px] text-gray-400">
-        Ao gerar, sua foto será enviada ao servidor Fooocus configurado. A última imagem permanece original.
+        Ao gerar, sua foto será enviada ao serviço de IA configurado. A última imagem permanece original.
       </p>
 
       {/* MODAL "VER TODAS AS SUGESTÕES" */}
