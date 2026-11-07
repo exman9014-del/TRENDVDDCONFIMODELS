@@ -1,0 +1,19 @@
+STATUS DA INTEGRACAO COMFYUI
+
+Implementado no código:
+- Seleção do backend no servidor por IMAGE_GENERATION_BACKEND.
+- Fooocus mantido em /api/generate-image-fooocus.
+- ComfyUI usa upload de imagem, POST /prompt com { "prompt": workflow }, polling de /history e busca da saída em /view.
+- Interface identifica o backend a partir da resposta do servidor.
+
+Ainda não comprovado:
+- Workflow API real instalado/configurado.
+- URL e autenticação real do Pod.
+- Geração de imagem end-to-end.
+- Estado, custo ou disponibilidade atual de qualquer Pod Runpod.
+
+Não use relatórios anteriores para inferir estado atual de Pod. Consulte o painel Runpod antes de qualquer ação ou teste com custo. Nenhum recurso foi alterado nesta implementação.
+
+Bloqueadores: workflow API real; configuração server-side da URL; proteção contra uso público não autorizado; teste real autorizado.
+
+Veja INTEGRATION_STATUS.md e COMFYUI_INTEGRATION.md para detalhes. Não compartilhe tokens ou API keys em chat, arquivo público ou variável NEXT_PUBLIC_*.
