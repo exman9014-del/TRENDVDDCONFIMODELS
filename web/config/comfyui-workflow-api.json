@@ -50,7 +50,7 @@
       "cfg": 7.0,
       "sampler_name": "euler",
       "scheduler": "normal",
-      "denoise": 0.95,
+      "denoise": 0.7,
       "model": [
         "4",
         0
@@ -64,7 +64,7 @@
         0
       ],
       "latent_image": [
-        "6",
+        "9",
         0
       ]
     },
@@ -73,16 +73,20 @@
       "title": "KSampler"
     }
   },
-  "6": {
+  "9": {
     "inputs": {
-      "width": 1024,
-      "height": 1024,
-      "length": 1,
-      "batch_size": 1
+      "pixels": [
+        "1",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
     },
-    "class_type": "EmptyLatentImage",
+    "class_type": "VAEEncode",
     "_meta": {
-      "title": "Empty Latent Image"
+      "title": "VAE Encode"
     }
   },
   "7": {
